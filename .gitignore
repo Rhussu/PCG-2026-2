@@ -31,6 +31,8 @@ htmlcov/
 *.log
 *.sqlite3
 *.db
+test_results/*.json
+tw/test_*
 
 # IDEs y editores
 .vscode/
