@@ -431,3 +431,52 @@ class GraphController:
             "lines": lines,
             "world_state": self.get_world_state(),
         }
+
+    def get_snapshot(self) -> dict:
+        """Devuelve una instantánea JSON-serializable del estado actual del grafo."""
+        doors_serialized = [
+            {"r1": k[0], "r2": k[1], "info": v}
+            for k, v in self.doors_data.items()
+        ]
+        return {
+            "room_coords": {k: [float(c[0]), float(c[1])] for k, c in self.room_coords.items()},
+            "grid_coords": {k: [int(c[0]), int(c[1])] for k, c in self.grid_coords.items()},
+            "connections": self.connections,
+            "raw_connections": [[c[0], c[1]] for c in self.raw_connections],
+            "current_room": self.current_room,
+            "visited_rooms": sorted(self.visited_rooms),
+            "rooms_data": self.rooms_data,
+            "doors_data": doors_serialized,
+            "player_inventory": list(self.player_inventory),
+            "matching_keys": dict(self.matching_keys),
+        }
+
+    def restore_snapshot(self, snapshot: dict) -> None:
+        """Restaura el estado del grafo a partir de una instantánea guardada."""
+        self.reset()
+        if not snapshot:
+            return
+
+        self.room_coords = {
+            k: (float(c[0]), float(c[1]))
+            for k, c in snapshot.get("room_coords", {}).items()
+        }
+        self.grid_coords = {
+            k: (int(c[0]), int(c[1]))
+            for k, c in snapshot.get("grid_coords", {}).items()
+        }
+        self.connections = list(snapshot.get("connections", []))
+        self.raw_connections = [
+            (c[0], c[1]) for c in snapshot.get("raw_connections", [])
+        ]
+        self.current_room = str(snapshot.get("current_room", ""))
+        self.visited_rooms = set(snapshot.get("visited_rooms", []))
+        self.rooms_data = dict(snapshot.get("rooms_data", {}))
+
+        self.doors_data = {}
+        for item in snapshot.get("doors_data", []):
+            if isinstance(item, dict) and "r1" in item and "r2" in item:
+                self.doors_data[(item["r1"], item["r2"])] = item.get("info", {})
+
+        self.player_inventory = list(snapshot.get("player_inventory", []))
+        self.matching_keys = dict(snapshot.get("matching_keys", {}))
