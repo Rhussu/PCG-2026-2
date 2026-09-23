@@ -67,7 +67,8 @@ class GameGeneratorWorker(QThread):
                 opts.grammar.blend_descriptions = self.config.get("blend_descriptions", False)
                 opts.grammar.blend_instructions = self.config.get("blend_instructions", False)
                 opts.grammar.only_last_action = self.config.get("only_last_action", False)
-                opts.grammar.ambiguous_instructions = self.config.get("ambiguous_instructions", False)
+                # ambiguous_instructions es inviable en TextWorld (causa 'assert False, not tested')
+                opts.grammar.ambiguous_instructions = False
                 opts.grammar.allowed_variables_numbering = self.config.get("entity_numbering", False)
 
                 if self.config.get("seed") is not None:
@@ -89,14 +90,13 @@ class GameGeneratorWorker(QThread):
                 opts = tw_gen.GameOptions()
                 opts.path = os.path.abspath(f"tw/{ch_type}.z8")
                 opts.force_recompile = True
+                opts.grammar.only_last_action = self.config.get("only_last_action", False)
                 if self.config.get("seed") is not None:
                     opts.seeds = int(self.config["seed"])
 
                 settings = {}
-                if ch_type == "tw-treasure_hunter":
-                    settings["level"] = str(self.config.get("level", 1))
-                elif ch_type == "tw-coin_collector":
-                    settings["level"] = str(self.config.get("level", 1))
+                if ch_type in {"tw-treasure_hunter", "tw-coin_collector"}:
+                    settings["level"] = int(self.config.get("level", 1))
 
                 game = make_fn(settings, opts)
                 compiled_path = tw_gen.compile_game(game, opts)
@@ -117,10 +117,14 @@ class ConfigPanel(QWidget):
     def __init__(
         self,
         on_start_game: Callable[[str, int, EnvInfos], None],
+        on_start_test: Callable[[str, dict, dict, int, EnvInfos], None] | None = None,
+        on_return_menu: Callable[[], None] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.on_start_game = on_start_game
+        self.on_start_test = on_start_test
+        self.on_return_menu = on_return_menu
         self.setObjectName("RightPanel")
         self.worker: GameGeneratorWorker | None = None
 
@@ -163,6 +167,9 @@ class ConfigPanel(QWidget):
         # Execution / Gym common settings
         self.content_layout.addWidget(self._build_gym_options())
 
+        # Testing & Benchmark settings
+        self.content_layout.addWidget(self._build_test_options())
+
         scroll_area.setWidget(content_widget)
         root_layout.addWidget(scroll_area, stretch=1)
 
@@ -195,6 +202,14 @@ class ConfigPanel(QWidget):
 
         layout.addLayout(title_box)
         layout.addStretch()
+
+        if self.on_return_menu:
+            btn_menu = QPushButton("🏠 MENÚ", header)
+            btn_menu.setObjectName("HeaderControl")
+            btn_menu.setCursor(Qt.PointingHandCursor)
+            btn_menu.clicked.connect(self.on_return_menu)
+            layout.addWidget(btn_menu)
+
         return header
 
     def _build_mode_selector(self) -> None:
@@ -215,8 +230,11 @@ class ConfigPanel(QWidget):
 
         self.radio_custom = QRadioButton("Mundo Personalizado", container)
         self.radio_custom.setChecked(True)
+        self.radio_custom.setCursor(Qt.PointingHandCursor)
         self.radio_file = QRadioButton("Cargar Juego (.z8)", container)
+        self.radio_file.setCursor(Qt.PointingHandCursor)
         self.radio_challenge = QRadioButton("Desafíos TextWorld", container)
+        self.radio_challenge.setCursor(Qt.PointingHandCursor)
 
         self.mode_btn_group.addButton(self.radio_custom, 0)
         self.mode_btn_group.addButton(self.radio_file, 1)
@@ -234,6 +252,25 @@ class ConfigPanel(QWidget):
 
     def _on_mode_changed(self, mode_id: int) -> None:
         self.mode_stack.setCurrentIndex(mode_id)
+        # Si estamos en modo Archivo, la opción de "Mundo nuevo por vuelta" es incompatible
+        if hasattr(self, "radio_var_diff"):
+            if mode_id == 1:
+                self.radio_var_diff.setEnabled(False)
+                self.radio_var_diff.setChecked(False)
+                self.radio_var_same.setChecked(True)
+                self.radio_var_diff.setCursor(Qt.ForbiddenCursor)
+                self.radio_var_diff.setToolTip("Incompatible con juegos precompilados (.z8): el mundo es estático y no usa semillas.")
+                self._validate_file_path()
+            else:
+                self.radio_var_diff.setEnabled(True)
+                self.radio_var_diff.setCursor(Qt.PointingHandCursor)
+                self.radio_var_diff.setToolTip("")
+                self.status_label.setStyleSheet("color: #59ff93; font-size: 11px;")
+                self.status_label.setText("Listo para configurar")
+                self.start_button.setEnabled(True)
+                self.test_button.setEnabled(True)
+                self.start_button.setCursor(Qt.PointingHandCursor)
+                self.test_button.setCursor(Qt.PointingHandCursor)
         self._update_summary()
 
     # ------------------ Mode 1: Custom Options ------------------
@@ -274,6 +311,7 @@ class ConfigPanel(QWidget):
         self.theme_combo.setObjectName("ConfigComboBox")
         self.theme_combo.addItem("Casa (House)", "house")
         self.theme_combo.addItem("Básico (Basic)", "basic")
+        self.theme_combo.setCursor(Qt.PointingHandCursor)
         self.theme_combo.currentIndexChanged.connect(self._update_summary)
         theme_row.addWidget(theme_lbl)
         theme_row.addWidget(self.theme_combo)
@@ -293,15 +331,21 @@ class ConfigPanel(QWidget):
         self.quest_len_slider, self.quest_len_val_lbl = self._create_slider_control(
             "Pasos para Resolver (Quest Length):", min_val=1, max_val=12, default_val=3
         )
-        self.quest_len_slider.valueChanged.connect(self._update_summary)
+        self.quest_len_slider.valueChanged.connect(self._on_quest_len_changed)
         quest_layout.addLayout(self._wrap_labeled_control("Longitud de Misión", self.quest_len_slider, self.quest_len_val_lbl))
 
         # Quest breadth
         self.quest_breadth_slider, self.quest_breadth_val_lbl = self._create_slider_control(
             "Amplitud de Subquests (Breadth):", min_val=1, max_val=5, default_val=1
         )
-        self.quest_breadth_slider.valueChanged.connect(self._update_summary)
-        quest_layout.addLayout(self._wrap_labeled_control("Amplitud (Sub-misiones paralelas)", self.quest_breadth_slider, self.quest_breadth_val_lbl))
+        self.quest_breadth_slider.valueChanged.connect(self._on_quest_breadth_changed)
+        breadth_box = self._wrap_labeled_control("Amplitud (Sub-misiones paralelas)", self.quest_breadth_slider, self.quest_breadth_val_lbl)
+        
+        self.breadth_hint_lbl = QLabel("")
+        self.breadth_hint_lbl.setObjectName("ConfigWarningHint")
+        self.breadth_hint_lbl.setVisible(False)
+        breadth_box.addWidget(self.breadth_hint_lbl)
+        quest_layout.addLayout(breadth_box)
 
         # Parallel quests spinbox
         parallel_row = QHBoxLayout()
@@ -310,6 +354,7 @@ class ConfigPanel(QWidget):
         self.parallel_spin = QSpinBox()
         self.parallel_spin.setRange(1, 4)
         self.parallel_spin.setValue(1)
+        self.parallel_spin.setCursor(Qt.PointingHandCursor)
         self.parallel_spin.valueChanged.connect(self._update_summary)
         parallel_row.addWidget(parallel_lbl)
         parallel_row.addWidget(self.parallel_spin)
@@ -320,10 +365,33 @@ class ConfigPanel(QWidget):
         adv_group = QGroupBox("Opciones Avanzadas de Chaining")
         adv_layout = QVBoxLayout(adv_group)
         self.chk_subquests = QCheckBox("Permitir submisiones incompletas (subquests abiertas)")
+        self.chk_subquests.setCursor(Qt.PointingHandCursor)
         self.chk_independent = QCheckBox("Permitir cadenas de quests totalmente independientes")
+        self.chk_independent.setCursor(Qt.PointingHandCursor)
         adv_layout.addWidget(self.chk_subquests)
         adv_layout.addWidget(self.chk_independent)
         quest_layout.addWidget(adv_group)
+
+        # Opciones de Pistas / Guía del Objetivo (only_last_action)
+        hints_group = QGroupBox("Guía y Pistas del Objetivo (TextWorld)")
+        hints_layout = QVBoxLayout(hints_group)
+        hints_layout.setSpacing(6)
+
+        self.chk_only_last = QCheckBox("Deshabilitar pistas paso a paso del objetivo (only_last_action)")
+        self.chk_only_last.setChecked(True)
+        self.chk_only_last.setCursor(Qt.PointingHandCursor)
+        self.chk_only_last.toggled.connect(self._on_only_last_toggled)
+
+        hint_only_last = QLabel(
+            "💡 Al marcar esta opción (only_last_action=True), TextWorld NO revelará el walkthrough "
+            "paso a paso ni dará pistas intermedias en el objetivo; solo indicará la meta final (ej. 'Recupera la escoba')."
+        )
+        hint_only_last.setObjectName("ConfigHintLabel")
+        hint_only_last.setWordWrap(True)
+
+        hints_layout.addWidget(self.chk_only_last)
+        hints_layout.addWidget(hint_only_last)
+        quest_layout.addWidget(hints_group)
         quest_layout.addStretch()
 
         tab_widget.addTab(tab_quest, "🎯 Misión")
@@ -336,19 +404,46 @@ class ConfigPanel(QWidget):
 
         self.chk_include_adj = QCheckBox("Incluir adjetivos en nombres de entidades (ej. red apple)")
         self.chk_include_adj.setChecked(True)
+        self.chk_include_adj.setCursor(Qt.PointingHandCursor)
+
         self.chk_blend_desc = QCheckBox("Fusionar descripciones entre oraciones consecutivas")
         self.chk_blend_desc.setChecked(True)
+        self.chk_blend_desc.setCursor(Qt.PointingHandCursor)
+
         self.chk_blend_inst = QCheckBox("Fusionar instrucciones consecutivas en una sola frase")
-        self.chk_only_last = QCheckBox("Objetivo describe sólo la última acción de la misión")
+        self.chk_blend_inst.setCursor(Qt.PointingHandCursor)
+
+        self.chk_only_last_grammar = QCheckBox("Deshabilitar pistas paso a paso del objetivo (only_last_action)")
+        self.chk_only_last_grammar.setChecked(True)
+        self.chk_only_last_grammar.setCursor(Qt.PointingHandCursor)
+        self.chk_only_last_grammar.toggled.connect(self._on_grammar_only_last_toggled)
+
+        # Instrucciones ambiguas: inviable en TextWorld (assert False, "not tested")
+        ambig_row = QHBoxLayout()
+        ambig_row.setSpacing(8)
         self.chk_ambiguous = QCheckBox("Instrucciones ambiguas usando tipos de objetos (ej. container)")
+        self.chk_ambiguous.setChecked(False)
+        self.chk_ambiguous.setEnabled(False)
+        self.chk_ambiguous.setCursor(Qt.ForbiddenCursor)
+        self.chk_ambiguous.setToolTip("Inviable: Genera un fallo fatal 'AssertionError: not tested' en el motor de TextWorld.")
+
+        ambig_badge = QLabel("⚠️ NO DISPONIBLE")
+        ambig_badge.setObjectName("ConfigLockedBadgeAlert")
+        ambig_badge.setToolTip("Función no implementada en TextWorld (inviable).")
+
+        ambig_row.addWidget(self.chk_ambiguous)
+        ambig_row.addWidget(ambig_badge)
+        ambig_row.addStretch()
+
         self.chk_numbering = QCheckBox("Numerar entidades duplicadas (ej. 'key 1', 'key 2')")
         self.chk_numbering.setChecked(True)
+        self.chk_numbering.setCursor(Qt.PointingHandCursor)
 
         grammar_layout.addWidget(self.chk_include_adj)
         grammar_layout.addWidget(self.chk_blend_desc)
         grammar_layout.addWidget(self.chk_blend_inst)
-        grammar_layout.addWidget(self.chk_only_last)
-        grammar_layout.addWidget(self.chk_ambiguous)
+        grammar_layout.addWidget(self.chk_only_last_grammar)
+        grammar_layout.addLayout(ambig_row)
         grammar_layout.addWidget(self.chk_numbering)
         grammar_layout.addStretch()
 
@@ -362,6 +457,7 @@ class ConfigPanel(QWidget):
 
         self.chk_random_seed = QCheckBox("Generar con Semilla Aleatoria en cada partida")
         self.chk_random_seed.setChecked(True)
+        self.chk_random_seed.setCursor(Qt.PointingHandCursor)
         self.chk_random_seed.toggled.connect(self._on_random_seed_toggled)
 
         seed_input_row = QHBoxLayout()
@@ -371,6 +467,7 @@ class ConfigPanel(QWidget):
         self.seed_spin.setRange(0, 999999)
         self.seed_spin.setValue(42)
         self.seed_spin.setEnabled(False)
+        self.seed_spin.setCursor(Qt.ForbiddenCursor)
 
         seed_input_row.addWidget(seed_lbl)
         seed_input_row.addWidget(self.seed_spin)
@@ -390,8 +487,66 @@ class ConfigPanel(QWidget):
         layout.addWidget(tab_widget)
         return widget
 
+    def _on_quest_len_changed(self, new_len: int) -> None:
+        if new_len <= 2:
+            self.quest_breadth_slider.setValue(1)
+            self.quest_breadth_slider.setEnabled(False)
+            self.quest_breadth_slider.setCursor(Qt.ForbiddenCursor)
+            self.breadth_hint_lbl.setText("🔒 Bloqueado: Ramificar subquests requiere al menos 3 pasos de longitud de misión.")
+            self.breadth_hint_lbl.setVisible(True)
+        else:
+            self.quest_breadth_slider.setEnabled(True)
+            self.quest_breadth_slider.setCursor(Qt.PointingHandCursor)
+            max_b = min(5, max(1, new_len - 1))
+            self.quest_breadth_slider.setMaximum(max_b)
+            if self.quest_breadth_slider.value() > max_b:
+                self.quest_breadth_slider.setValue(max_b)
+            if max_b < 5:
+                self.breadth_hint_lbl.setText(f"ℹ️ Amplitud máxima permitida para longitud {new_len}: {max_b}")
+                self.breadth_hint_lbl.setVisible(True)
+            else:
+                self.breadth_hint_lbl.setVisible(False)
+        self._update_summary()
+
+    def _on_quest_breadth_changed(self, new_breadth: int) -> None:
+        if new_breadth > 1:
+            self.chk_subquests.setChecked(True)
+            self.chk_subquests.setEnabled(False)
+            self.chk_subquests.setCursor(Qt.ForbiddenCursor)
+            self.chk_subquests.setToolTip("Bloqueado activo: Requerido obligatoriamente por TextWorld cuando la amplitud es > 1.")
+        else:
+            self.chk_subquests.setEnabled(True)
+            self.chk_subquests.setCursor(Qt.PointingHandCursor)
+            self.chk_subquests.setToolTip("")
+        self._update_summary()
+
+    def _on_only_last_toggled(self, checked: bool) -> None:
+        if hasattr(self, "chk_only_last_grammar") and self.chk_only_last_grammar.isChecked() != checked:
+            self.chk_only_last_grammar.blockSignals(True)
+            self.chk_only_last_grammar.setChecked(checked)
+            self.chk_only_last_grammar.blockSignals(False)
+
+        if checked:
+            self.chk_blend_inst.setChecked(False)
+            self.chk_blend_inst.setEnabled(False)
+            self.chk_blend_inst.setCursor(Qt.ForbiddenCursor)
+            self.chk_blend_inst.setToolTip("Incompatible: No se pueden fusionar instrucciones si solo se describe la última acción.")
+        else:
+            self.chk_blend_inst.setEnabled(True)
+            self.chk_blend_inst.setCursor(Qt.PointingHandCursor)
+            self.chk_blend_inst.setToolTip("")
+        self._update_summary()
+
+    def _on_grammar_only_last_toggled(self, checked: bool) -> None:
+        if hasattr(self, "chk_only_last") and self.chk_only_last.isChecked() != checked:
+            self.chk_only_last.setChecked(checked)
+
+    def _on_challenge_only_last_toggled(self, checked: bool) -> None:
+        self._update_summary()
+
     def _on_random_seed_toggled(self, checked: bool) -> None:
         self.seed_spin.setEnabled(not checked)
+        self.seed_spin.setCursor(Qt.PointingHandCursor if not checked else Qt.ForbiddenCursor)
 
     # ------------------ Mode 2: Existing File Options ------------------
     def _build_file_options(self) -> QWidget:
@@ -411,6 +566,7 @@ class ConfigPanel(QWidget):
         predefined_lbl.setObjectName("ConfigOptionLabel")
         self.file_combo = QComboBox()
         self.file_combo.setObjectName("ConfigComboBox")
+        self.file_combo.setCursor(Qt.PointingHandCursor)
 
         # Discover project z8 files
         project_games = [
@@ -435,9 +591,11 @@ class ConfigPanel(QWidget):
         self.file_path_edit.setObjectName("ConfigPathEdit")
         if self.file_combo.count() > 0:
             self.file_path_edit.setText(self.file_combo.currentData())
+        self.file_path_edit.textChanged.connect(self._validate_file_path)
 
         browse_btn = QPushButton("Examinar...")
         browse_btn.setObjectName("ConfigBrowseButton")
+        browse_btn.setCursor(Qt.PointingHandCursor)
         browse_btn.clicked.connect(self._browse_game_file)
 
         path_row.addWidget(path_lbl)
@@ -452,10 +610,33 @@ class ConfigPanel(QWidget):
 
         return widget
 
+    def _validate_file_path(self) -> bool:
+        mode_id = self.mode_btn_group.checkedId()
+        if mode_id != 1:  # No estamos en modo archivo
+            return True
+        path = self.file_path_edit.text().strip()
+        if not path or not os.path.exists(path):
+            self.status_label.setStyleSheet("color: #e06c75; font-size: 11px;")
+            self.status_label.setText("⚠️ Por favor selecciona un archivo .z8 / .json válido existente.")
+            self.start_button.setEnabled(False)
+            self.test_button.setEnabled(False)
+            self.start_button.setCursor(Qt.ForbiddenCursor)
+            self.test_button.setCursor(Qt.ForbiddenCursor)
+            return False
+        else:
+            self.status_label.setStyleSheet("color: #59ff93; font-size: 11px;")
+            self.status_label.setText("Listo para configurar")
+            self.start_button.setEnabled(True)
+            self.test_button.setEnabled(True)
+            self.start_button.setCursor(Qt.PointingHandCursor)
+            self.test_button.setCursor(Qt.PointingHandCursor)
+            return True
+
     def _on_predefined_file_selected(self, index: int) -> None:
         path = self.file_combo.itemData(index)
         if path:
             self.file_path_edit.setText(path)
+            self._validate_file_path()
             self._update_summary()
 
     def _browse_game_file(self) -> None:
@@ -467,6 +648,7 @@ class ConfigPanel(QWidget):
         )
         if file_path:
             self.file_path_edit.setText(file_path)
+            self._validate_file_path()
             self._update_summary()
 
     # ------------------ Mode 3: Challenges ------------------
@@ -488,6 +670,7 @@ class ConfigPanel(QWidget):
         self.challenge_combo.setObjectName("ConfigComboBox")
         self.challenge_combo.addItem("Treasure Hunter (Caza del Tesoro)", "tw-treasure_hunter")
         self.challenge_combo.addItem("Coin Collector (Recolector de Monedas)", "tw-coin_collector")
+        self.challenge_combo.setCursor(Qt.PointingHandCursor)
         self.challenge_combo.currentIndexChanged.connect(self._update_summary)
 
         challenge_row.addWidget(challenge_lbl)
@@ -499,12 +682,60 @@ class ConfigPanel(QWidget):
         )
         layout.addLayout(self._wrap_labeled_control("Dificultad (1-30)", self.difficulty_slider, self.difficulty_val_lbl))
 
+        # Semilla específica para el modo Desafío
+        seed_group = QGroupBox("Semilla del Desafío")
+        seed_layout = QVBoxLayout(seed_group)
+        self.chk_challenge_random_seed = QCheckBox("Generar con Semilla Aleatoria")
+        self.chk_challenge_random_seed.setChecked(True)
+        self.chk_challenge_random_seed.setCursor(Qt.PointingHandCursor)
+        self.chk_challenge_random_seed.toggled.connect(self._on_challenge_seed_toggled)
+
+        ch_seed_row = QHBoxLayout()
+        ch_seed_lbl = QLabel("Semilla Fija:")
+        ch_seed_lbl.setObjectName("ConfigOptionLabel")
+        self.challenge_seed_spin = QSpinBox()
+        self.challenge_seed_spin.setRange(0, 999999)
+        self.challenge_seed_spin.setValue(42)
+        self.challenge_seed_spin.setEnabled(False)
+        self.challenge_seed_spin.setCursor(Qt.ForbiddenCursor)
+
+        ch_seed_row.addWidget(ch_seed_lbl)
+        ch_seed_row.addWidget(self.challenge_seed_spin)
+        ch_seed_row.addStretch()
+
+        seed_layout.addWidget(self.chk_challenge_random_seed)
+        seed_layout.addLayout(ch_seed_row)
+        layout.addWidget(seed_group)
+
+        # Guía y Pistas del Desafío (only_last_action)
+        ch_hints_group = QGroupBox("Guía y Pistas del Objetivo (TextWorld)")
+        ch_hints_layout = QVBoxLayout(ch_hints_group)
+        ch_hints_layout.setSpacing(6)
+        self.chk_challenge_only_last = QCheckBox("Deshabilitar pistas paso a paso del objetivo (only_last_action)")
+        self.chk_challenge_only_last.setChecked(True)
+        self.chk_challenge_only_last.setCursor(Qt.PointingHandCursor)
+        self.chk_challenge_only_last.toggled.connect(self._on_challenge_only_last_toggled)
+
+        ch_hint_lbl = QLabel(
+            "💡 Al marcar esta opción (only_last_action=True), TextWorld solo describe la meta final "
+            "sin revelar los pasos intermedios de navegación ni el walkthrough."
+        )
+        ch_hint_lbl.setObjectName("ConfigHintLabel")
+        ch_hint_lbl.setWordWrap(True)
+        ch_hints_layout.addWidget(self.chk_challenge_only_last)
+        ch_hints_layout.addWidget(ch_hint_lbl)
+        layout.addWidget(ch_hints_group)
+
         hint = QLabel("Los desafíos TextWorld generan problemas estandarizados con misiones graduadas en complejidad.")
         hint.setObjectName("ConfigHintLabel")
         layout.addWidget(hint)
         layout.addStretch()
 
         return widget
+
+    def _on_challenge_seed_toggled(self, checked: bool) -> None:
+        self.challenge_seed_spin.setEnabled(not checked)
+        self.challenge_seed_spin.setCursor(Qt.PointingHandCursor if not checked else Qt.ForbiddenCursor)
 
     # ------------------ Common Gym Options ------------------
     def _build_gym_options(self) -> QWidget:
@@ -530,39 +761,137 @@ class ConfigPanel(QWidget):
         infos_layout = QGridLayout(infos_group)
         infos_layout.setSpacing(10)
 
+        # 1. Localización (Requerido)
+        loc_box = QHBoxLayout()
+        loc_box.setSpacing(6)
         self.chk_location = QCheckBox("Localización (location)")
         self.chk_location.setChecked(True)
         self.chk_location.setEnabled(False)  # Requerido por el mapa
+        self.chk_location.setCursor(Qt.ForbiddenCursor)
+        self.chk_location.setToolTip("Dato obligatorio: requerido para la navegación y actualización del mapa.")
+        badge_loc = QLabel("🔒 REQUERIDO")
+        badge_loc.setObjectName("ConfigLockedBadge")
+        badge_loc.setToolTip("Requerido para el funcionamiento del mapa interactivo.")
+        loc_box.addWidget(self.chk_location)
+        loc_box.addWidget(badge_loc)
+        loc_box.addStretch()
 
+        # 2. Hechos del Mundo (Requerido)
+        facts_box = QHBoxLayout()
+        facts_box.setSpacing(6)
         self.chk_facts = QCheckBox("Hechos del Mundo (facts)")
         self.chk_facts.setChecked(True)
         self.chk_facts.setEnabled(False)     # Requerido por el mapa
+        self.chk_facts.setCursor(Qt.ForbiddenCursor)
+        self.chk_facts.setToolTip("Dato obligatorio: el grafo y el estado del mundo dependen de los hechos.")
+        badge_facts = QLabel("🔒 REQUERIDO")
+        badge_facts.setObjectName("ConfigLockedBadge")
+        badge_facts.setToolTip("Requerido para procesar las entidades y salas.")
+        facts_box.addWidget(self.chk_facts)
+        facts_box.addWidget(badge_facts)
+        facts_box.addStretch()
 
+        # 3. Comandos Admisibles (Requerido)
+        cmds_box = QHBoxLayout()
+        cmds_box.setSpacing(6)
         self.chk_commands = QCheckBox("Comandos Admisibles (admissible_commands)")
         self.chk_commands.setChecked(True)
         self.chk_commands.setEnabled(False)  # Requerido por el agente
+        self.chk_commands.setCursor(Qt.ForbiddenCursor)
+        self.chk_commands.setToolTip("Dato obligatorio: imprescindible para que el agente autónomo seleccione acciones válidas.")
+        badge_cmds = QLabel("🔒 REQUERIDO")
+        badge_cmds.setObjectName("ConfigLockedBadge")
+        badge_cmds.setToolTip("Requerido por la IA para conocer las acciones válidas en cada turno.")
+        cmds_box.addWidget(self.chk_commands)
+        cmds_box.addWidget(badge_cmds)
+        cmds_box.addStretch()
 
+        # 4. Descripción
         self.chk_description = QCheckBox("Descripción de sala (description)")
         self.chk_description.setChecked(True)
+        self.chk_description.setCursor(Qt.PointingHandCursor)
 
+        # 5. Inventario
         self.chk_inventory = QCheckBox("Inventario (inventory)")
         self.chk_inventory.setChecked(True)
+        self.chk_inventory.setCursor(Qt.PointingHandCursor)
 
+        # 6. Score
         self.chk_score = QCheckBox("Puntuación (score)")
         self.chk_score.setChecked(True)
+        self.chk_score.setCursor(Qt.PointingHandCursor)
 
+        # 7. Won/lost
         self.chk_won_lost = QCheckBox("Victoria / Derrota (won / lost)")
         self.chk_won_lost.setChecked(True)
+        self.chk_won_lost.setCursor(Qt.PointingHandCursor)
 
-        infos_layout.addWidget(self.chk_location, 0, 0)
-        infos_layout.addWidget(self.chk_facts, 0, 1)
-        infos_layout.addWidget(self.chk_commands, 1, 0)
+        infos_layout.addLayout(loc_box, 0, 0)
+        infos_layout.addLayout(facts_box, 0, 1)
+        infos_layout.addLayout(cmds_box, 1, 0)
         infos_layout.addWidget(self.chk_description, 1, 1)
         infos_layout.addWidget(self.chk_inventory, 2, 0)
         infos_layout.addWidget(self.chk_score, 2, 1)
         infos_layout.addWidget(self.chk_won_lost, 3, 0)
 
         layout.addWidget(infos_group)
+        return container
+
+    def _build_test_options(self) -> QWidget:
+        container = QFrame(self)
+        container.setObjectName("ConfigTestCard")
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        header_layout = QHBoxLayout()
+        header = QLabel("CONFIGURACIÓN DE TESTEO Y BENCHMARK", container)
+        header.setObjectName("ConfigSectionHeader")
+
+        badge = QLabel("MODO EVALUACIÓN", container)
+        badge.setObjectName("ConfigTestBadge")
+        badge.setStyleSheet(
+            "background-color: rgba(97, 175, 239, 0.15); color: #59e8ff; "
+            "border: 1px solid #61afef; border-radius: 4px; padding: 2px 8px; font-size: 10px; font-weight: 700;"
+        )
+
+        header_layout.addWidget(header)
+        header_layout.addStretch()
+        header_layout.addWidget(badge)
+        layout.addLayout(header_layout)
+
+        # Number of iterations slider
+        self.test_iterations_slider, self.test_iterations_val_lbl = self._create_slider_control(
+            "Vueltas de Test:", min_val=1, max_val=50, default_val=5
+        )
+        layout.addLayout(self._wrap_labeled_control("Vueltas / Partidas Autónomas (Episodes)", self.test_iterations_slider, self.test_iterations_val_lbl))
+
+        # Variation mode options
+        variation_group = QGroupBox("Variación del Entorno durante el Test")
+        var_layout = QHBoxLayout(variation_group)
+        var_layout.setSpacing(20)
+
+        self.radio_var_same = QRadioButton("Mismo mundo (1 compilación, múltiples partidas)", variation_group)
+        self.radio_var_same.setChecked(True)
+        self.radio_var_same.setCursor(Qt.PointingHandCursor)
+        self.radio_var_diff = QRadioButton("Mundo nuevo por vuelta (Semillas distintas)", variation_group)
+        self.radio_var_diff.setCursor(Qt.PointingHandCursor)
+
+        self.test_var_group = QButtonGroup(self)
+        self.test_var_group.addButton(self.radio_var_same, 0)
+        self.test_var_group.addButton(self.radio_var_diff, 1)
+
+        var_layout.addWidget(self.radio_var_same)
+        var_layout.addWidget(self.radio_var_diff)
+        var_layout.addStretch()
+        layout.addWidget(variation_group)
+
+        # Execution delay slider (0 ms: instantáneo para benchmark rápido)
+        self.test_delay_slider, self.test_delay_val_lbl = self._create_slider_control(
+            "Delay por paso (ms):", min_val=0, max_val=200, default_val=0
+        )
+        layout.addLayout(self._wrap_labeled_control("Velocidad de Simulación (0 ms = Rendimiento Máximo)", self.test_delay_slider, self.test_delay_val_lbl))
+
         return container
 
     # ------------------ Action Bar ------------------
@@ -585,6 +914,13 @@ class ConfigPanel(QWidget):
         info_layout.addWidget(self.summary_label)
         info_layout.addWidget(self.status_label)
 
+        self.test_button = QPushButton("TESTEAR", action_bar)
+        self.test_button.setObjectName("ConfigTestButton")
+        self.test_button.setCursor(Qt.PointingHandCursor)
+        self.test_button.setMinimumHeight(44)
+        self.test_button.setMinimumWidth(150)
+        self.test_button.clicked.connect(self._on_test_clicked)
+
         self.start_button = QPushButton("COMENZAR", action_bar)
         self.start_button.setObjectName("ConfigStartButton")
         self.start_button.setCursor(Qt.PointingHandCursor)
@@ -593,6 +929,7 @@ class ConfigPanel(QWidget):
         self.start_button.clicked.connect(self._on_start_clicked)
 
         layout.addLayout(info_layout, stretch=1)
+        layout.addWidget(self.test_button)
         layout.addWidget(self.start_button)
         return action_bar
 
@@ -604,6 +941,7 @@ class ConfigPanel(QWidget):
         slider.setObjectName("ConfigSlider")
         slider.setRange(min_val, max_val)
         slider.setValue(default_val)
+        slider.setCursor(Qt.PointingHandCursor)
 
         val_label = QLabel(str(default_val))
         val_label.setObjectName("ConfigSliderValue")
@@ -637,7 +975,8 @@ class ConfigPanel(QWidget):
             objects = self.objects_slider.value()
             quest_len = self.quest_len_slider.value()
             theme = self.theme_combo.currentText().split()[0]
-            self.summary_label.setText(f"Mundo: {rooms} salas • {objects} objetos • Quest: {quest_len} pasos • Tema: {theme}")
+            pistas = "Sin pistas (only_last)" if hasattr(self, "chk_only_last") and self.chk_only_last.isChecked() else "Con pistas paso a paso"
+            self.summary_label.setText(f"Mundo: {rooms} salas • {objects} objetos • Quest: {quest_len} pasos • Tema: {theme} • {pistas}")
         elif mode == 1:  # File
             path = self.file_path_edit.text()
             name = os.path.basename(path) if path else "Sin archivo"
@@ -645,11 +984,39 @@ class ConfigPanel(QWidget):
         elif mode == 2:  # Challenge
             ch_name = self.challenge_combo.currentText().split("(")[0].strip()
             lvl = self.difficulty_slider.value()
-            self.summary_label.setText(f"Desafío: {ch_name} • Nivel: {lvl}")
+            pistas = "Sin pistas (only_last)" if hasattr(self, "chk_challenge_only_last") and self.chk_challenge_only_last.isChecked() else "Con pistas paso a paso"
+            self.summary_label.setText(f"Desafío: {ch_name} • Nivel: {lvl} • {pistas}")
+
+    def _validate_config_preflight(self, mode_id: int) -> tuple[bool, str]:
+        """Comprueba que la configuración sea básica y viable para evitar errores inmediatos."""
+        if mode_id == 0:  # Custom
+            rooms = self.rooms_slider.value()
+            quest_len = self.quest_len_slider.value()
+            quest_breadth = self.quest_breadth_slider.value()
+
+            if quest_len <= 2 and quest_breadth > 1:
+                return False, "Inviable: No se pueden generar subquests ramificadas con una longitud menor a 3 pasos."
+            if rooms == 1 and self.parallel_spin.value() > 2:
+                return False, "Inviable: Un mundo de 1 sala no admite más de 2 misiones paralelas independientes."
+        elif mode_id == 1:  # File
+            path = self.file_path_edit.text().strip()
+            if not path or not os.path.exists(path):
+                return False, "Por favor selecciona un archivo de juego (.z8) válido que exista."
+        elif mode_id == 2:  # Challenge
+            level = self.difficulty_slider.value()
+            if level < 1 or level > 30:
+                return False, "El nivel del desafío debe estar entre 1 y 30."
+        return True, ""
 
     # ------------------ Game Launch Logic ------------------
     def _on_start_clicked(self) -> None:
         mode_id = self.mode_btn_group.checkedId()
+        is_valid, err_msg = self._validate_config_preflight(mode_id)
+        if not is_valid:
+            self.status_label.setStyleSheet("color: #e06c75; font-size: 11px;")
+            self.status_label.setText(f"⚠️ {err_msg}")
+            return
+
         max_steps = self.max_steps_slider.value()
 
         request_infos = EnvInfos(
@@ -682,30 +1049,34 @@ class ConfigPanel(QWidget):
                 "blend_descriptions": self.chk_blend_desc.isChecked(),
                 "blend_instructions": self.chk_blend_inst.isChecked(),
                 "only_last_action": self.chk_only_last.isChecked(),
-                "ambiguous_instructions": self.chk_ambiguous.isChecked(),
+                "ambiguous_instructions": False,
                 "entity_numbering": self.chk_numbering.isChecked(),
                 "seed": seed_val,
             }
+            self.status_label.setStyleSheet("color: #59e8ff; font-size: 11px;")
             self.status_label.setText("Generando y compilando mundo TextWorld...")
         elif mode_id == 1:
             mode_str = "file"
             file_path = self.file_path_edit.text().strip()
-            if not file_path:
-                self.status_label.setText("Error: Selecciona un archivo válido")
-                return
             config = {"file_path": file_path}
+            self.status_label.setStyleSheet("color: #59e8ff; font-size: 11px;")
             self.status_label.setText("Cargando archivo de juego...")
         elif mode_id == 2:
             mode_str = "challenge"
-            seed_val = None if self.chk_random_seed.isChecked() else self.seed_spin.value()
+            seed_val = None if self.chk_challenge_random_seed.isChecked() else self.challenge_seed_spin.value()
             config = {
                 "challenge_type": self.challenge_combo.currentData(),
-                "level": self.difficulty_slider.value(),
+                "level": int(self.difficulty_slider.value()),
                 "seed": seed_val,
+                "only_last_action": self.chk_challenge_only_last.isChecked(),
             }
+            self.status_label.setStyleSheet("color: #59e8ff; font-size: 11px;")
             self.status_label.setText("Generando desafío TextWorld...")
 
         self.start_button.setEnabled(False)
+        self.test_button.setEnabled(False)
+        self.start_button.setCursor(Qt.ForbiddenCursor)
+        self.test_button.setCursor(Qt.ForbiddenCursor)
 
         # Background generation worker
         self.worker = GameGeneratorWorker(
@@ -719,12 +1090,87 @@ class ConfigPanel(QWidget):
         self.worker.finished_error.connect(self._on_worker_error)
         self.worker.start()
 
+    def _on_test_clicked(self) -> None:
+        mode_id = self.mode_btn_group.checkedId()
+        is_valid, err_msg = self._validate_config_preflight(mode_id)
+        if not is_valid:
+            self.status_label.setStyleSheet("color: #e06c75; font-size: 11px;")
+            self.status_label.setText(f"⚠️ {err_msg}")
+            return
+
+        max_steps = self.max_steps_slider.value()
+
+        request_infos = EnvInfos(
+            admissible_commands=True,
+            location=True,
+            facts=True,
+            description=self.chk_description.isChecked(),
+            inventory=self.chk_inventory.isChecked(),
+            score=self.chk_score.isChecked(),
+            won=self.chk_won_lost.isChecked(),
+            lost=self.chk_won_lost.isChecked(),
+        )
+
+        config: dict = {}
+        mode_str = "custom"
+
+        if mode_id == 0:
+            mode_str = "custom"
+            seed_val = None if self.chk_random_seed.isChecked() else self.seed_spin.value()
+            config = {
+                "nb_rooms": self.rooms_slider.value(),
+                "nb_objects": self.objects_slider.value(),
+                "quest_length": self.quest_len_slider.value(),
+                "quest_breadth": self.quest_breadth_slider.value(),
+                "nb_parallel_quests": self.parallel_spin.value(),
+                "subquests": self.chk_subquests.isChecked(),
+                "independent_chains": self.chk_independent.isChecked(),
+                "theme": self.theme_combo.currentData(),
+                "include_adj": self.chk_include_adj.isChecked(),
+                "blend_descriptions": self.chk_blend_desc.isChecked(),
+                "blend_instructions": self.chk_blend_inst.isChecked(),
+                "only_last_action": self.chk_only_last.isChecked(),
+                "ambiguous_instructions": False,
+                "entity_numbering": self.chk_numbering.isChecked(),
+                "seed": seed_val,
+            }
+        elif mode_id == 1:
+            mode_str = "file"
+            file_path = self.file_path_edit.text().strip()
+            config = {"file_path": file_path}
+        elif mode_id == 2:
+            mode_str = "challenge"
+            seed_val = None if self.chk_challenge_random_seed.isChecked() else self.challenge_seed_spin.value()
+            config = {
+                "challenge_type": self.challenge_combo.currentData(),
+                "level": int(self.difficulty_slider.value()),
+                "seed": seed_val,
+                "only_last_action": self.chk_challenge_only_last.isChecked(),
+            }
+
+        test_config = {
+            "num_iterations": self.test_iterations_slider.value(),
+            "variation_mode": "same_world" if (self.radio_var_same.isChecked() or mode_id == 1) else "distinct_seeds",
+            "step_delay_ms": self.test_delay_slider.value(),
+        }
+
+        if self.on_start_test:
+            self.on_start_test(mode_str, config, test_config, max_steps, request_infos)
+
     def _on_worker_success(self, game_path: str, max_steps: int, request_infos: EnvInfos) -> None:
+        self.status_label.setStyleSheet("color: #59ff93; font-size: 11px;")
         self.status_label.setText("¡Mundo generado con éxito! Iniciando...")
         self.start_button.setEnabled(True)
+        self.test_button.setEnabled(True)
+        self.start_button.setCursor(Qt.PointingHandCursor)
+        self.test_button.setCursor(Qt.PointingHandCursor)
         if self.on_start_game:
             self.on_start_game(game_path, max_steps, request_infos)
 
     def _on_worker_error(self, error_message: str) -> None:
+        self.status_label.setStyleSheet("color: #e06c75; font-size: 11px;")
         self.status_label.setText(f"Error al generar: {error_message}")
         self.start_button.setEnabled(True)
+        self.test_button.setEnabled(True)
+        self.start_button.setCursor(Qt.PointingHandCursor)
+        self.test_button.setCursor(Qt.PointingHandCursor)
