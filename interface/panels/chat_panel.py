@@ -41,11 +41,13 @@ class ChatPanel(QWidget):
         self,
         controller: ChatController,
         on_configure: Callable[[], None] | None = None,
+        on_return_menu: Callable[[], None] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.controller = controller
         self.on_configure = on_configure
+        self.on_return_menu = on_return_menu
         self.setObjectName("RightPanel")
 
         root_layout = QVBoxLayout(self)
@@ -92,9 +94,13 @@ class ChatPanel(QWidget):
         controls = QHBoxLayout()
         controls.setSpacing(8)
 
+        menu_btn = self._header_button("🏠 MENÚ")
         config_btn = self._header_button("CONFIG")
         reset_btn = self._header_button("RESET")
         next_btn = self._header_button("NEXT-STEP")
+
+        if self.on_return_menu:
+            menu_btn.clicked.connect(self.on_return_menu)
 
         if self.on_configure:
             config_btn.clicked.connect(self.on_configure)
@@ -102,6 +108,7 @@ class ChatPanel(QWidget):
         reset_btn.clicked.connect(self.controller.reset_conversation)
         next_btn.clicked.connect(self.controller.next_step)
 
+        controls.addWidget(menu_btn)
         controls.addWidget(config_btn)
         controls.addWidget(next_btn)
         controls.addWidget(reset_btn)
