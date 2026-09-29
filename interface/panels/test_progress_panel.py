@@ -155,6 +155,13 @@ class TestProgressPanel(QWidget):
         top_row = QHBoxLayout()
         top_row.setSpacing(8)
 
+        self.agent_badge = QLabel("🤖 AGENTE: --", header)
+        self.agent_badge.setObjectName("TestAgentBadge")
+        self.agent_badge.setStyleSheet(
+            "background-color: rgba(198, 120, 221, 0.15); color: #c678dd; "
+            "border: 1px solid #c678dd; border-radius: 6px; padding: 4px 10px; font-size: 11px; font-weight: 700;"
+        )
+
         self.execution_badge = QLabel("📅 TEST REALIZADO: --/--/---- --:--", header)
         self.execution_badge.setObjectName("TestExecutionBadge")
         self.execution_badge.setStyleSheet(
@@ -167,6 +174,7 @@ class TestProgressPanel(QWidget):
         self.cancel_button.setCursor(Qt.PointingHandCursor)
         self.cancel_button.clicked.connect(self._on_cancel_clicked)
 
+        top_row.addWidget(self.agent_badge)
         top_row.addWidget(self.execution_badge)
         top_row.addWidget(self.cancel_button)
 
@@ -355,7 +363,8 @@ class TestProgressPanel(QWidget):
 
         sessions = list_saved_test_sessions()
         for s in sessions:
-            label = f"📅 {s['formatted_timestamp']} • {s['total_runs']} vueltas ({s['win_rate']}%)"
+            agent_name = s.get("agent_name", "Agente Aleatorio")
+            label = f"🤖 {agent_name} • 📅 {s['formatted_timestamp']} ({s['win_rate']}%)"
             self.sessions_combo.addItem(label, s["filepath"])
 
         self.sessions_combo.blockSignals(False)
@@ -393,6 +402,9 @@ class TestProgressPanel(QWidget):
         total_runs = summary.get("total_runs", len(its))
         target_runs = summary.get("target_runs", total_runs)
 
+        agent_name = session_data.get("agent_name") or session_data.get("agent_type") or "Agente Aleatorio"
+        self.agent_badge.setText(f"🤖 {agent_name.upper()}")
+
         # 1. Cabecera y Badge de Cuándo Pasó el Test
         self.cancel_button.setVisible(False)
         self.execution_badge.setText(f"📅 EJECUTADO: {formatted_ts} • Duración: {dur_s}s")
@@ -401,7 +413,7 @@ class TestProgressPanel(QWidget):
             "border: 1px solid #59e8ff; border-radius: 6px; padding: 4px 10px; font-size: 11px; font-weight: 700;"
         )
         self.header_status_label.setText(
-            f"Modo: {mode.upper()} • {total_runs} partidas evaluadas • Fecha: {formatted_ts}"
+            f"Agente: {agent_name} • Modo: {mode.upper()} • {total_runs} partidas evaluadas • Fecha: {formatted_ts}"
         )
 
         # 2. Barra de Progreso y Cronómetro
@@ -467,6 +479,9 @@ class TestProgressPanel(QWidget):
         self._clear_transcript()
 
         now_str = datetime.now().strftime("%H:%M:%S")
+
+        agent_type = getattr(worker, "agent_type", "random")
+        self.agent_badge.setText(f"🤖 {agent_type.upper()}")
 
         self.cancel_button.setVisible(True)
         self.cancel_button.setEnabled(True)

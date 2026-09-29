@@ -1,16 +1,16 @@
-from __future__ import annotations
-from textworld import EnvInfos
-import textworld.gym
 from dataclasses import dataclass
 from PySide6.QtCore import QObject, Signal
-from agente.Agente import Agente  # Asegúrate de que la ruta sea correcta
+from textworld import EnvInfos
+import textworld.gym
 
-# Un mock de tu Agente para que el código corra sin errores de importación
+from agente.factory import create_agent
+
 
 @dataclass(slots=True)
 class ChatMessage:
     role: str
     text: str
+
 
 class ChatController(QObject):
     state_changed = Signal()
@@ -20,12 +20,12 @@ class ChatController(QObject):
         graph_controller,
         game_file: str | None = None,
         max_episode_steps: int = 50,
+        agent_type: str = "random",
+        agent_config: dict | None = None,
     ) -> None:
         super().__init__()
-        self._model_name = "TextWorld Agent"
         self._is_online = True
         self._messages: list[ChatMessage] = []
-        self.agente = Agente()
         self.graph_controller = graph_controller
         self.env = None
         self.env_id = None
@@ -33,8 +33,16 @@ class ChatController(QObject):
         self.valid_commands: list[str] = []
         self.done = False
 
+        self.set_agent(agent_type, agent_config)
+
         if game_file:
             self.start_game(game_file, max_episode_steps=max_episode_steps)
+
+    def set_agent(self, agent_type: str = "random", agent_config: dict | None = None) -> None:
+        """Configura el agente activo para las partidas interactivas."""
+        self.agente = create_agent(agent_type, agent_config)
+        self._model_name = self.agente.name
+        self.state_changed.emit()
 
     @property
     def is_game_active(self) -> bool:
@@ -45,7 +53,14 @@ class ChatController(QObject):
         game_file: str,
         max_episode_steps: int = 50,
         request_infos: EnvInfos | None = None,
+        agent_type: str | None = None,
+        agent_config: dict | None = None,
     ) -> None:
+        if agent_type is not None:
+            self.set_agent(agent_type, agent_config)
+        else:
+            self.agente.reset()
+
         if self.env is not None:
             try:
                 self.env.close()
@@ -82,6 +97,7 @@ class ChatController(QObject):
 
     def reset_conversation(self) -> None:
         self._messages.clear()
+        self.agente.reset()
         if self.env is None:
             self.state_changed.emit()
             return

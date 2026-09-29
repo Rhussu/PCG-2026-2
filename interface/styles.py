@@ -750,31 +750,27 @@ QWidget#MainMenuContent {
 }
 
 QFrame#MainMenuCard {
-    background-color: #252932;
-    border: 1.5px solid #353b47;
-    border-radius: 12px;
+    background-color: #232730;
+    border: 1.5px solid #333945;
+    border-radius: 14px;
 }
 
 QFrame#MainMenuCard:hover {
-    border-color: #61afef;
-    background-color: #282d37;
-}
-
-QFrame#MainMenuCardDisabled {
-    background-color: #1f232b;
-    border: 1.5px dashed #353b47;
-    border-radius: 12px;
+    border-color: #59e8ff;
+    background-color: #262c37;
 }
 
 QLabel#MainMenuCardTitle {
     color: #ffffff;
-    font-size: 18px;
+    font-size: 20px;
     font-weight: 700;
+    letter-spacing: 0.3px;
 }
 
 QLabel#MainMenuCardDesc {
     color: #abb2bf;
     font-size: 13px;
+    line-height: 1.5;
 }
 
 QPushButton#MainMenuButtonActive {
@@ -783,8 +779,8 @@ QPushButton#MainMenuButtonActive {
     font-size: 13px;
     font-weight: 800;
     border: none;
-    border-radius: 8px;
-    padding: 10px 18px;
+    border-radius: 9px;
+    padding: 12px 20px;
     letter-spacing: 0.8px;
 }
 
@@ -797,14 +793,24 @@ QPushButton#MainMenuButtonActive:pressed {
     background-color: #4fa0e0;
 }
 
-QPushButton#MainMenuButtonDisabled {
-    background-color: #282c35;
-    color: #5c6370;
-    font-size: 12px;
-    font-weight: 700;
-    border: 1px solid #3e4451;
-    border-radius: 8px;
-    padding: 10px 18px;
+QPushButton#MainMenuButtonResults {
+    background-color: #98c379;
+    color: #1e2227;
+    font-size: 13px;
+    font-weight: 800;
+    border: none;
+    border-radius: 9px;
+    padding: 12px 20px;
+    letter-spacing: 0.8px;
+}
+
+QPushButton#MainMenuButtonResults:hover {
+    background-color: #a9d889;
+    color: #14171a;
+}
+
+QPushButton#MainMenuButtonResults:pressed {
+    background-color: #84ad66;
 }
 
 QWidget#MainMenuFooter {

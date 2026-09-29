@@ -117,11 +117,20 @@ class PrincipalPanel(QWidget):
 
         layout.addWidget(self.root_stack)
 
-    def _on_start_game(self, game_file: str, max_episode_steps: int, request_infos: EnvInfos) -> None:
+    def _on_start_game(
+        self,
+        game_file: str,
+        max_episode_steps: int,
+        request_infos: EnvInfos,
+        agent_type: str = "random",
+        agent_config: dict | None = None,
+    ) -> None:
         self.chat_controller.start_game(
             game_file=game_file,
             max_episode_steps=max_episode_steps,
             request_infos=request_infos,
+            agent_type=agent_type,
+            agent_config=agent_config,
         )
         self.right_stack.setCurrentIndex(1)
 
@@ -132,6 +141,8 @@ class PrincipalPanel(QWidget):
         test_config: dict,
         max_steps: int,
         request_infos: EnvInfos,
+        agent_type: str = "random",
+        agent_config: dict | None = None,
     ) -> None:
         # Si ya había un worker corriendo, cancelarlo
         if self.test_worker and self.test_worker.isRunning():
@@ -144,6 +155,8 @@ class PrincipalPanel(QWidget):
             test_config=test_config,
             max_steps=max_steps,
             request_infos=request_infos,
+            agent_type=agent_type,
+            agent_config=agent_config,
             parent=self,
         )
         self.test_worker.test_finished.connect(self._on_test_finished)

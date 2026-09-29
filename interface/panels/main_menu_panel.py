@@ -18,7 +18,7 @@ from controllers.test_controller import list_saved_test_sessions
 
 
 class MenuOptionCard(QFrame):
-    """Tarjeta interactiva para el menú principal con estética profesional."""
+    """Tarjeta interactiva para el menú principal con estética moderna y minimalista."""
 
     def __init__(
         self,
@@ -27,36 +27,30 @@ class MenuOptionCard(QFrame):
         title: str,
         description: str,
         button_text: str,
+        button_object_name: str = "MainMenuButtonActive",
         on_click: Callable[[], None] | None = None,
-        is_disabled: bool = False,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self.setObjectName("MainMenuCardDisabled" if is_disabled else "MainMenuCard")
+        self.setObjectName("MainMenuCard")
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 22, 24, 22)
-        layout.setSpacing(12)
+        layout.setContentsMargins(28, 26, 28, 26)
+        layout.setSpacing(14)
 
-        # Header con Badge
+        # Header con Badge Temático
         top_row = QHBoxLayout()
         badge = QLabel(badge_text, self)
         badge.setStyleSheet(
-            f"background-color: {badge_color}22; color: {badge_color}; "
-            f"border: 1px solid {badge_color}; border-radius: 4px; padding: 3px 9px; "
-            "font-size: 10px; font-weight: 800; letter-spacing: 1px;"
+            f"background-color: {badge_color}1a; color: {badge_color}; "
+            f"border: 1px solid {badge_color}88; border-radius: 6px; padding: 4px 10px; "
+            "font-size: 11px; font-weight: 800; letter-spacing: 0.8px;"
         )
         top_row.addWidget(badge)
         top_row.addStretch()
-
-        if is_disabled:
-            lock_label = QLabel("🔒 BLOQUEADO", self)
-            lock_label.setStyleSheet("color: #e5c07b; font-size: 10px; font-weight: 800;")
-            top_row.addWidget(lock_label)
-
         layout.addLayout(top_row)
 
-        # Título
+        # Título de la tarjeta
         title_label = QLabel(title, self)
         title_label.setObjectName("MainMenuCardTitle")
         layout.addWidget(title_label)
@@ -69,24 +63,19 @@ class MenuOptionCard(QFrame):
 
         layout.addStretch()
 
-        # Botón de Acción
+        # Botón de Acción Call-To-Action
         btn = QPushButton(button_text, self)
-        if is_disabled:
-            btn.setObjectName("MainMenuButtonDisabled")
-            btn.setEnabled(False)
-            btn.setCursor(Qt.ForbiddenCursor)
-        else:
-            btn.setObjectName("MainMenuButtonActive")
-            btn.setCursor(Qt.PointingHandCursor)
-            if on_click:
-                btn.clicked.connect(on_click)
+        btn.setObjectName(button_object_name)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setMinimumHeight(46)
+        if on_click:
+            btn.clicked.connect(on_click)
 
-        btn.setMinimumHeight(44)
         layout.addWidget(btn)
 
 
 class MainMenuPanel(QWidget):
-    """Pantalla inicial / Menú Principal de la aplicación."""
+    """Pantalla inicial / Menú Principal de la aplicación con diseño dual centrado y minimalista."""
 
     open_config_requested = Signal()
     open_results_requested = Signal()
@@ -115,7 +104,7 @@ class MainMenuPanel(QWidget):
         # 1. Cabecera Hero
         root_layout.addWidget(self._build_hero_header())
 
-        # 2. Contenedor de Opciones (Centrado y con scroll)
+        # 2. Contenedor de Opciones (Centrado y con scroll suave)
         scroll = QScrollArea(self)
         scroll.setObjectName("ConfigScrollArea")
         scroll.setWidgetResizable(True)
@@ -124,68 +113,55 @@ class MainMenuPanel(QWidget):
         content = QWidget(scroll)
         content.setObjectName("MainMenuContent")
         content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(40, 30, 40, 30)
+        content_layout.setContentsMargins(40, 40, 40, 40)
         content_layout.setSpacing(25)
         content_layout.setAlignment(Qt.AlignCenter)
 
-        # Tarjetas de opciones principales (Grid horizontal de 3 opciones)
+        # Fila de tarjetas: 2 opciones simétricas
         cards_row = QHBoxLayout()
-        cards_row.setSpacing(24)
+        cards_row.setSpacing(32)
+        cards_row.setAlignment(Qt.AlignCenter)
 
-        # Opción 1: Configurar
+        # Opción 1: Configurar Simulación & Entorno
         card_config = MenuOptionCard(
-            badge_text="MUNDO & PARTIDA",
+            badge_text="🎮 MUNDO & SIMULACIÓN",
             badge_color="#61afef",
-            title="Configurar Entorno",
+            title="Configurar Simulación",
             description=(
-                "Genera mundos procedurales personalizados (habitaciones, objetos, misiones), "
-                "carga archivos de juego precompilados (.z8) o desafíos TextWorld, y lanza partidas "
-                "interactivas o benchmarks de testeo autónomo."
+                "Genera mundos procedurales, carga mapas precompilados (.z8) o desafíos TextWorld. "
+                "Selecciona el modelo decisor (Historial Clásico, RAG o Baseline) y lanza partidas "
+                "interactivas paso a paso o suites de evaluación continua."
             ),
-            button_text="IR A CONFIGURACIÓN ➔",
+            button_text="CONFIGURAR PARTIDA ➔",
+            button_object_name="MainMenuButtonActive",
             on_click=self.open_config_requested.emit,
         )
-        card_config.setMinimumWidth(320)
-        card_config.setMaximumWidth(420)
+        card_config.setMinimumWidth(380)
+        card_config.setMaximumWidth(460)
+        card_config.setMinimumHeight(320)
         card_config.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
 
-        # Opción 2: Revisar Tests
+        # Opción 2: Revisar Resultados & Diagnóstico
         card_results = MenuOptionCard(
-            badge_text="BENCHMARK & HISTORIAL",
+            badge_text="📊 BENCHMARK & RESULTADOS",
             badge_color="#98c379",
-            title="Revisar Test Específico",
+            title="Historial & Diagnóstico",
             description=(
-                "Consulta directamente el historial de sesiones de testeo y diagnósticos guardados. "
-                "Analiza métricas de eficacia (% victorias), eficiencia en pasos y visualiza la "
-                "representación espacial de cada partida sin iniciar una nueva simulación."
+                "Consulta y audita el rendimiento histórico de las sesiones guardadas. "
+                "Analiza tasas de victoria, eficiencia en pasos, consumo de tokens en 2x 4090, "
+                "latencias por decisión y visualiza la evolución del mapa explorado."
             ),
-            button_text="VER HISTORIAL DE TESTS ➔",
+            button_text="EXPLORAR RESULTADOS ➔",
+            button_object_name="MainMenuButtonResults",
             on_click=self.open_results_requested.emit,
         )
-        card_results.setMinimumWidth(320)
-        card_results.setMaximumWidth(420)
+        card_results.setMinimumWidth(380)
+        card_results.setMaximumWidth(460)
+        card_results.setMinimumHeight(320)
         card_results.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
-
-        # Opción 3: Configurar Agente (Deshabilitado)
-        card_agent = MenuOptionCard(
-            badge_text="INTELIGENCIA & MODELOS",
-            badge_color="#c678dd",
-            title="Configuración del Agente",
-            description=(
-                "Personaliza la arquitectura del agente decisor: conexión a modelos de lenguaje (LLMs), "
-                "definición de prompts del sistema, estrategias de exploración espacial y parámetros "
-                "de inferencia (temperatura, tokens)."
-            ),
-            button_text="PRÓXIMAMENTE (EN DESARROLLO)",
-            is_disabled=True,
-        )
-        card_agent.setMinimumWidth(320)
-        card_agent.setMaximumWidth(420)
-        card_agent.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
 
         cards_row.addWidget(card_config)
         cards_row.addWidget(card_results)
-        cards_row.addWidget(card_agent)
 
         content_layout.addLayout(cards_row)
 
@@ -199,18 +175,18 @@ class MainMenuPanel(QWidget):
         header = QWidget(self)
         header.setObjectName("MainMenuHero")
         layout = QVBoxLayout(header)
-        layout.setContentsMargins(40, 32, 40, 26)
+        layout.setContentsMargins(40, 36, 40, 26)
         layout.setSpacing(8)
 
-        tag = QLabel("TEXTWORLD AI AGENT PLATFORM", header)
+        tag = QLabel("TEXTWORLD AI BENCHMARK PLATFORM", header)
         tag.setObjectName("ConfigHeaderTag")
 
         title = QLabel("Menú Principal de Simulación", header)
         title.setObjectName("MainMenuHeroTitle")
 
         subtitle = QLabel(
-            "Selecciona una opción para comenzar: configura un nuevo mundo o prueba, "
-            "inspecciona resultados de evaluaciones anteriores o ajusta parámetros.",
+            "Plataforma de evaluación espacio-temporal para agentes autónomos con memoria. "
+            "Selecciona una modalidad para comenzar:",
             header,
         )
         subtitle.setObjectName("MainMenuHeroSubtitle")
@@ -233,7 +209,7 @@ class MainMenuPanel(QWidget):
         )
         self.sessions_label.setStyleSheet("color: #abb2bf; font-size: 11px;")
 
-        hint_label = QLabel("💡 Puedes regresar a este menú en cualquier momento desde cualquier panel", footer)
+        hint_label = QLabel("💡 Puedes regresar a este menú en cualquier momento desde cualquier pantalla", footer)
         hint_label.setStyleSheet("color: #5c6370; font-size: 11px; font-style: italic;")
 
         layout.addWidget(self.sessions_label)

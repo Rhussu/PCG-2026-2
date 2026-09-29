@@ -12,7 +12,7 @@ from textworld import EnvInfos
 import textworld.gym
 import textworld.generator as tw_gen
 
-from agente.Agente import Agente
+from agente.factory import create_agent
 from controllers.graph_controller import GraphController
 
 
@@ -41,6 +41,8 @@ class TestRunnerWorker(QThread):
         test_config: dict,
         max_steps: int,
         request_infos: EnvInfos,
+        agent_type: str = "random",
+        agent_config: dict | None = None,
         parent: Any = None,
     ) -> None:
         super().__init__(parent)
@@ -49,6 +51,8 @@ class TestRunnerWorker(QThread):
         self.test_config = test_config
         self.max_steps = max_steps
         self.request_infos = request_infos
+        self.agent_type = agent_type or test_config.get("agent_type", "random")
+        self.agent_config = agent_config if agent_config is not None else test_config.get("agent_config", {})
 
         self._is_cancelled: bool = False
         self.num_iterations: int = int(test_config.get("num_iterations", 5))
@@ -143,6 +147,7 @@ class TestRunnerWorker(QThread):
                 shared_game_path = self._compile_or_get_game(0)
 
             total_wins = 0
+            agent = create_agent(self.agent_type, self.agent_config)
 
             for it in range(1, self.num_iterations + 1):
                 if self._is_cancelled:
@@ -172,7 +177,7 @@ class TestRunnerWorker(QThread):
                 )
                 env = textworld.gym.make(env_id)
 
-                agent = Agente()
+                agent.reset()
                 local_gc = GraphController()
                 obs, infos = env.reset()
                 clean_obs = clean_observation(obs)
@@ -314,16 +319,8 @@ class TestRunnerWorker(QThread):
                     "efficiency_ratio": 0.0,
                 }
 
-            # Apartado extensible para métricas de agente (futuras)
-            agent_metrics = {
-                "prompt_tokens": None,
-                "completion_tokens": None,
-                "total_tokens": None,
-                "avg_inference_latency_ms": None,
-                "api_calls": None,
-                "estimated_cost_usd": None,
-                "status": "pending_implementation",
-            }
+            # Métricas acumuladas del agente durante la sesión
+            agent_metrics = agent.get_metrics()
 
             timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
             saved_filename = f"test_session_{timestamp_str}.json"
@@ -332,6 +329,9 @@ class TestRunnerWorker(QThread):
             session_data = {
                 "session_id": timestamp_str,
                 "timestamp": datetime.now().isoformat(),
+                "agent_type": self.agent_type,
+                "agent_name": agent.name,
+                "agent_config": self.agent_config,
                 "mode": self.mode,
                 "world_config": self.world_config,
                 "test_config": self.test_config,
@@ -378,11 +378,17 @@ def list_saved_test_sessions() -> list[dict]:
                 data = json.load(f)
                 summary = data.get("summary", {})
                 raw_ts = data.get("timestamp", "")
+                raw_agent_type = data.get("agent_type", "random")
+                raw_agent_name = data.get("agent_name") or (
+                    "Agente Aleatorio (Baseline)" if raw_agent_type == "random" else raw_agent_type
+                )
                 sessions.append({
                     "filepath": os.path.abspath(filepath),
                     "filename": os.path.basename(filepath),
                     "timestamp": raw_ts,
                     "formatted_timestamp": format_session_timestamp(raw_ts),
+                    "agent_type": raw_agent_type,
+                    "agent_name": raw_agent_name,
                     "mode": data.get("mode", "unknown"),
                     "total_runs": summary.get("total_runs", 0),
                     "win_rate": summary.get("win_rate_percent", 0.0),

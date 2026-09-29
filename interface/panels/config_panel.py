@@ -29,6 +29,8 @@ from PySide6.QtWidgets import (
 from textworld import EnvInfos
 import textworld.generator as tw_gen
 
+from agente.factory import get_available_agents
+
 
 class GameGeneratorWorker(QThread):
     finished_success = Signal(str, int, object)  # game_path, max_steps, request_infos
@@ -116,8 +118,8 @@ class GameGeneratorWorker(QThread):
 class ConfigPanel(QWidget):
     def __init__(
         self,
-        on_start_game: Callable[[str, int, EnvInfos], None],
-        on_start_test: Callable[[str, dict, dict, int, EnvInfos], None] | None = None,
+        on_start_game: Callable[..., None],
+        on_start_test: Callable[..., None] | None = None,
         on_return_menu: Callable[[], None] | None = None,
         parent: QWidget | None = None,
     ) -> None:
@@ -166,6 +168,9 @@ class ConfigPanel(QWidget):
 
         # Execution / Gym common settings
         self.content_layout.addWidget(self._build_gym_options())
+
+        # Agent architecture and memory settings
+        self.content_layout.addWidget(self._build_agent_options())
 
         # Testing & Benchmark settings
         self.content_layout.addWidget(self._build_test_options())
@@ -837,6 +842,162 @@ class ConfigPanel(QWidget):
         layout.addWidget(infos_group)
         return container
 
+    # ------------------ Agent & Memory Architecture Options ------------------
+    def _build_agent_options(self) -> QWidget:
+        container = QFrame(self)
+        container.setObjectName("ConfigModeCard")
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        header_layout = QHBoxLayout()
+        header = QLabel("MODELO DECISOR & ARQUITECTURA DE MEMORIA", container)
+        header.setObjectName("ConfigSectionHeader")
+
+        badge = QLabel("SOPORTE 2x RTX 4090", container)
+        badge.setStyleSheet(
+            "background-color: rgba(198, 120, 221, 0.15); color: #c678dd; "
+            "border: 1px solid #c678dd; border-radius: 4px; padding: 2px 8px; font-size: 10px; font-weight: 700;"
+        )
+
+        header_layout.addWidget(header)
+        header_layout.addStretch()
+        header_layout.addWidget(badge)
+        layout.addLayout(header_layout)
+
+        # Selector de agente
+        selector_layout = QHBoxLayout()
+        selector_lbl = QLabel("Agente Autónomo Activo:", container)
+        selector_lbl.setStyleSheet("color: #abb2bf; font-size: 12px; font-weight: 600;")
+
+        self.agent_combo = QComboBox(container)
+        self.agent_combo.setObjectName("ConfigComboBox")
+        self.agent_combo.setMinimumWidth(320)
+
+        for ag in get_available_agents():
+            self.agent_combo.addItem(f"{ag['icon']} {ag['name']}", ag["id"])
+
+        self.agent_combo.currentIndexChanged.connect(self._on_agent_changed)
+        selector_layout.addWidget(selector_lbl)
+        selector_layout.addWidget(self.agent_combo, stretch=1)
+        layout.addLayout(selector_layout)
+
+        # Descripción del agente
+        self.agent_desc_lbl = QLabel(container)
+        self.agent_desc_lbl.setObjectName("ConfigHintLabel")
+        self.agent_desc_lbl.setWordWrap(True)
+        self.agent_desc_lbl.setStyleSheet("color: #59e8ff; font-size: 11px; padding: 2px 0;")
+        layout.addWidget(self.agent_desc_lbl)
+
+        # Contenedor para controles de Memoria Clásica
+        self.history_setting_widget = QWidget(container)
+        h_layout = QVBoxLayout(self.history_setting_widget)
+        h_layout.setContentsMargins(0, 0, 0, 0)
+        self.agent_history_slider, self.agent_history_val_lbl = self._create_slider_control(
+            "Ventana de Contexto (Turnos previos):", min_val=2, max_val=30, default_val=10
+        )
+        h_layout.addLayout(self._wrap_labeled_control(
+            "Ventana Deslizante de Memoria Conversacional (LangChain Buffer)",
+            self.agent_history_slider,
+            self.agent_history_val_lbl,
+        ))
+        layout.addWidget(self.history_setting_widget)
+
+        # Contenedor para controles de Memoria RAG
+        self.rag_setting_widget = QWidget(container)
+        r_layout = QVBoxLayout(self.rag_setting_widget)
+        r_layout.setContentsMargins(0, 0, 0, 0)
+        self.agent_rag_k_slider, self.agent_rag_k_val_lbl = self._create_slider_control(
+            "Memorias Relevantes a Recuperar (Top-K):", min_val=1, max_val=10, default_val=4
+        )
+        r_layout.addLayout(self._wrap_labeled_control(
+            "Recuperación Vectorial Semántica de Experiencias (LangChain Top-K)",
+            self.agent_rag_k_slider,
+            self.agent_rag_k_val_lbl,
+        ))
+        layout.addWidget(self.rag_setting_widget)
+
+        # Contenedor de configuración de hardware local 2x RTX 4090
+        self.hw_setting_widget = QGroupBox("Servidor LLM Local (2x RTX 4090 / vLLM / Ollama API)", container)
+        hw_layout = QGridLayout(self.hw_setting_widget)
+        hw_layout.setSpacing(10)
+
+        lbl_url = QLabel("Endpoint Local API:")
+        lbl_url.setStyleSheet("color: #abb2bf; font-size: 11px;")
+        self.agent_url_edit = QLineEdit("http://localhost:8000/v1", self.hw_setting_widget)
+        self.agent_url_edit.setObjectName("ConfigFileLineEdit")
+        self.agent_url_edit.setPlaceholderText("http://localhost:8000/v1")
+
+        self.agent_temp_slider, self.agent_temp_val_lbl = self._create_slider_control(
+            "Temperatura:", min_val=0, max_val=100, default_val=10
+        )
+        self.agent_temp_slider.valueChanged.connect(
+            lambda v: self.agent_temp_val_lbl.setText(f"{v / 100.0:.2f}")
+        )
+        self.agent_temp_val_lbl.setText("0.10")
+
+        hw_layout.addWidget(lbl_url, 0, 0)
+        hw_layout.addWidget(self.agent_url_edit, 0, 1)
+
+        temp_row = QHBoxLayout()
+        temp_lbl = QLabel("Temperatura de Inferencia:")
+        temp_lbl.setStyleSheet("color: #abb2bf; font-size: 11px;")
+        temp_row.addWidget(temp_lbl)
+        temp_row.addWidget(self.agent_temp_slider, stretch=1)
+        temp_row.addWidget(self.agent_temp_val_lbl)
+        hw_layout.addLayout(temp_row, 1, 0, 1, 2)
+
+        lbl_hw_note = QLabel(
+            "💡 Despliegue optimizado para 2x RTX 4090 (48GB VRAM) vía vLLM (tp=2) u Ollama. "
+            "Si el servidor está offline, el sistema opera con fallback automático sin interrupciones.",
+            self.hw_setting_widget,
+        )
+        lbl_hw_note.setObjectName("ConfigHintLabel")
+        lbl_hw_note.setWordWrap(True)
+        hw_layout.addWidget(lbl_hw_note, 2, 0, 1, 2)
+
+        layout.addWidget(self.hw_setting_widget)
+
+        # Actualizar visibilidad inicial
+        self._on_agent_changed(0)
+
+        return container
+
+    def _on_agent_changed(self, idx: int) -> None:
+        agent_id = self.agent_combo.currentData() or "random"
+        agents = get_available_agents()
+        curr = next((a for a in agents if a["id"] == agent_id), None)
+        if curr:
+            self.agent_desc_lbl.setText(f"{curr['icon']} {curr['description']}")
+
+        is_random = (agent_id == "random")
+        is_classic = (agent_id == "classic_memory")
+        is_rag = (agent_id == "rag_memory")
+
+        if hasattr(self, "history_setting_widget"):
+            self.history_setting_widget.setVisible(is_classic)
+        if hasattr(self, "rag_setting_widget"):
+            self.rag_setting_widget.setVisible(is_rag)
+        if hasattr(self, "hw_setting_widget"):
+            self.hw_setting_widget.setVisible(not is_random)
+
+        self._update_summary()
+
+    def _get_selected_agent_config(self) -> tuple[str, dict]:
+        agent_type = self.agent_combo.currentData() or "random"
+        url = self.agent_url_edit.text().strip() if hasattr(self, "agent_url_edit") else "http://localhost:8000/v1"
+        temp = (self.agent_temp_slider.value() / 100.0) if hasattr(self, "agent_temp_slider") else 0.1
+        window = self.agent_history_slider.value() if hasattr(self, "agent_history_slider") else 10
+        rag_k = self.agent_rag_k_slider.value() if hasattr(self, "agent_rag_k_slider") else 4
+
+        agent_config = {
+            "llm_base_url": url or "http://localhost:8000/v1",
+            "temperature": temp,
+            "classic_history_window": window,
+            "rag_top_k": rag_k,
+        }
+        return agent_type, agent_config
+
     def _build_test_options(self) -> QWidget:
         container = QFrame(self)
         container.setObjectName("ConfigTestCard")
@@ -969,6 +1130,8 @@ class ConfigPanel(QWidget):
         return box
 
     def _update_summary(self) -> None:
+        if not hasattr(self, "summary_label") or self.summary_label is None:
+            return
         mode = self.mode_btn_group.checkedId()
         if mode == 0:  # Custom
             rooms = self.rooms_slider.value()
@@ -986,6 +1149,9 @@ class ConfigPanel(QWidget):
             lvl = self.difficulty_slider.value()
             pistas = "Sin pistas (only_last)" if hasattr(self, "chk_challenge_only_last") and self.chk_challenge_only_last.isChecked() else "Con pistas paso a paso"
             self.summary_label.setText(f"Desafío: {ch_name} • Nivel: {lvl} • {pistas}")
+
+        if hasattr(self, "agent_combo") and self.agent_combo.currentText():
+            self.summary_label.setText(self.summary_label.text() + f" | {self.agent_combo.currentText()}")
 
     def _validate_config_preflight(self, mode_id: int) -> tuple[bool, str]:
         """Comprueba que la configuración sea básica y viable para evitar errores inmediatos."""
@@ -1154,8 +1320,12 @@ class ConfigPanel(QWidget):
             "step_delay_ms": self.test_delay_slider.value(),
         }
 
+        agent_type, agent_config = self._get_selected_agent_config()
+        test_config["agent_type"] = agent_type
+        test_config["agent_config"] = agent_config
+
         if self.on_start_test:
-            self.on_start_test(mode_str, config, test_config, max_steps, request_infos)
+            self.on_start_test(mode_str, config, test_config, max_steps, request_infos, agent_type, agent_config)
 
     def _on_worker_success(self, game_path: str, max_steps: int, request_infos: EnvInfos) -> None:
         self.status_label.setStyleSheet("color: #59ff93; font-size: 11px;")
@@ -1165,7 +1335,8 @@ class ConfigPanel(QWidget):
         self.start_button.setCursor(Qt.PointingHandCursor)
         self.test_button.setCursor(Qt.PointingHandCursor)
         if self.on_start_game:
-            self.on_start_game(game_path, max_steps, request_infos)
+            agent_type, agent_config = self._get_selected_agent_config()
+            self.on_start_game(game_path, max_steps, request_infos, agent_type, agent_config)
 
     def _on_worker_error(self, error_message: str) -> None:
         self.status_label.setStyleSheet("color: #e06c75; font-size: 11px;")

@@ -290,15 +290,15 @@ class TestResultsPanel(QWidget):
         lbl = QLabel("MÉTRICAS DE RECURSOS DEL AGENTE (TOKENS & INFERENCIA)", container)
         lbl.setObjectName("ConfigSectionHeader")
 
-        badge = QLabel("PRÓXIMAMENTE / MODULAR", container)
-        badge.setStyleSheet(
-            "background-color: rgba(229, 192, 123, 0.15); color: #e5c07b; "
-            "border: 1px solid #e5c07b; border-radius: 4px; padding: 2px 8px; font-size: 10px; font-weight: 700;"
+        self.agent_metric_badge = QLabel("AGENTE DECISOR", container)
+        self.agent_metric_badge.setStyleSheet(
+            "background-color: rgba(97, 175, 239, 0.15); color: #59e8ff; "
+            "border: 1px solid #59e8ff; border-radius: 4px; padding: 2px 8px; font-size: 10px; font-weight: 700;"
         )
 
         header_layout.addWidget(lbl)
         header_layout.addStretch()
-        header_layout.addWidget(badge)
+        header_layout.addWidget(self.agent_metric_badge)
         layout.addLayout(header_layout)
 
         desc = QLabel(
@@ -423,7 +423,8 @@ class TestResultsPanel(QWidget):
 
         sessions = list_saved_test_sessions()
         for s in sessions:
-            label = f"📅 {s['formatted_timestamp']} • {s['total_runs']} vueltas ({s['win_rate']}%)"
+            agent_name = s.get("agent_name", "Agente Aleatorio")
+            label = f"🤖 {agent_name} • 📅 {s['formatted_timestamp']} • {s['total_runs']} partidas ({s['win_rate']}%)"
             self.sessions_combo.addItem(label, s["filepath"])
 
         self.sessions_combo.blockSignals(False)
@@ -455,11 +456,15 @@ class TestResultsPanel(QWidget):
         ts = session_data.get("timestamp", "")
         formatted_ts = format_session_timestamp(ts)
 
+        # Metadatos del Agente Evaluado
+        agent_name = session_data.get("agent_name") or session_data.get("agent_type") or "Agente Aleatorio (Baseline)"
+        agent_metrics = session_data.get("agent_metrics", {})
+
         # Metadatos en cabecera
         total_runs = summary.get("total_runs", len(its))
         dur_s = summary.get("total_duration_s", 0)
         self.session_meta_label.setText(
-            f"📅 Fecha de Ejecución: {formatted_ts} • Modo: {mode.upper()} • {total_runs} partidas evaluadas • Duración: {dur_s}s"
+            f"🤖 Agente: {agent_name} • 📅 {formatted_ts} • Modo: {mode.upper()} • {total_runs} partidas evaluadas • Duración: {dur_s}s"
         )
 
         # Sincronizar desplegable sin bucles
@@ -628,6 +633,54 @@ class TestResultsPanel(QWidget):
             self.table.setItem(row_idx, 3, item_score)
             self.table.setItem(row_idx, 4, item_rooms)
             self.table.setItem(row_idx, 5, item_dur)
+
+        # ----------------- Actualizar Métricas del Agente -----------------
+        if hasattr(self, "agent_metric_badge"):
+            self.agent_metric_badge.setText(f"🤖 {agent_name.upper()}")
+
+        p_tokens = agent_metrics.get("prompt_tokens")
+        c_tokens = agent_metrics.get("completion_tokens")
+        latency = agent_metrics.get("avg_inference_latency_ms")
+        api_calls = agent_metrics.get("api_calls")
+        status = agent_metrics.get("status", "ready")
+        is_mock = agent_metrics.get("is_mock", False)
+
+        if p_tokens is not None and p_tokens > 0:
+            self.card_prompt_tokens.v_lbl.setText(f"{p_tokens:,}")  # type: ignore[attr-defined]
+            self.card_prompt_tokens.s_lbl.setText("Tokens en observaciones y prompts")  # type: ignore[attr-defined]
+        elif agent_name == "Agente Aleatorio (Baseline)":
+            self.card_prompt_tokens.v_lbl.setText("0 (Baseline)")  # type: ignore[attr-defined]
+            self.card_prompt_tokens.s_lbl.setText("Control sin modelo de lenguaje")  # type: ignore[attr-defined]
+        else:
+            self.card_prompt_tokens.v_lbl.setText("--")  # type: ignore[attr-defined]
+
+        if c_tokens is not None and c_tokens > 0:
+            self.card_completion_tokens.v_lbl.setText(f"{c_tokens:,}")  # type: ignore[attr-defined]
+            self.card_completion_tokens.s_lbl.setText("Tokens generados en acciones")  # type: ignore[attr-defined]
+        elif agent_name == "Agente Aleatorio (Baseline)":
+            self.card_completion_tokens.v_lbl.setText("0 (Baseline)")  # type: ignore[attr-defined]
+            self.card_completion_tokens.s_lbl.setText("Acciones elegidas uniformemente")  # type: ignore[attr-defined]
+        else:
+            self.card_completion_tokens.v_lbl.setText("--")  # type: ignore[attr-defined]
+
+        if latency is not None and latency > 0:
+            self.card_latency.v_lbl.setText(f"{latency} ms")  # type: ignore[attr-defined]
+            self.card_latency.s_lbl.setText("Tiempo de inferencia promedio por paso")  # type: ignore[attr-defined]
+        elif agent_name == "Agente Aleatorio (Baseline)":
+            self.card_latency.v_lbl.setText("0.0 ms")  # type: ignore[attr-defined]
+            self.card_latency.s_lbl.setText("Decisión instantánea")  # type: ignore[attr-defined]
+        else:
+            self.card_latency.v_lbl.setText("-- ms")  # type: ignore[attr-defined]
+
+        if api_calls is not None and api_calls > 0:
+            status_text = " (Fallback Seguro)" if is_mock else " (Inferencia Local 2x 4090)"
+            self.card_cost.v_lbl.setText(f"{api_calls} llamadas")  # type: ignore[attr-defined]
+            self.card_cost.s_lbl.setText(f"Costo: $0.00{status_text}")  # type: ignore[attr-defined]
+        elif agent_name == "Agente Aleatorio (Baseline)":
+            self.card_cost.v_lbl.setText("0 / $0.00")  # type: ignore[attr-defined]
+            self.card_cost.s_lbl.setText("Inferencia local sin costo")  # type: ignore[attr-defined]
+        else:
+            self.card_cost.v_lbl.setText("-- / $0.00")  # type: ignore[attr-defined]
 
         saved_path = session_data.get("saved_filepath", "")
         self.footer_info.setText(f"Sesión guardada en: {saved_path}")
