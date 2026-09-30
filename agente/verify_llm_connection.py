@@ -3,16 +3,21 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import time
 
+# Asegurar que el directorio raíz del proyecto esté en sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+from agente.base import BaseAgent
 from agente.config import AgentConfig
 
 
 def test_connection() -> int:
     config = AgentConfig()
     print("=" * 65)
-    print("🔍 VERIFICACIÓN DE CONEXIÓN A 2x RTX 4090 (vLLM / Ollama API)")
+    print("🔍 VERIFICACIÓN DE CONEXIÓN A 2x RTX 4090 (Ollama / vLLM API)")
     print("=" * 65)
     print(f"URL Base LLM:      {config.llm_base_url}")
     print(f"Modelo configurado: {config.llm_model}")
@@ -21,7 +26,7 @@ def test_connection() -> int:
     print("-" * 65)
 
     # 1. Probar LangChain ChatOpenAI
-    print("[1/2] Probando inferencia con LangChain ChatOpenAI...")
+    print("[1/3] Probando inferencia con LangChain ChatOpenAI...")
     try:
         from langchain_core.messages import HumanMessage, SystemMessage
         from langchain_openai import ChatOpenAI
@@ -31,28 +36,38 @@ def test_connection() -> int:
             api_key=config.llm_api_key,
             model=config.llm_model,
             temperature=0.0,
-            max_tokens=20,
-            timeout=10.0,
+            max_tokens=config.max_tokens,
+            timeout=config.request_timeout,
         )
 
         t0 = time.time()
         res = llm.invoke([
-            SystemMessage(content="Eres un jugador de TextWorld. Responde con un comando."),
-            HumanMessage(content="Comandos: look, inventory. Elige uno."),
+            SystemMessage(content="Eres un jugador de TextWorld. Responde eligiendo exactamente un comando de la lista."),
+            HumanMessage(content="Comandos disponibles: look, inventory. Elige uno."),
         ])
         latency_ms = (time.time() - t0) * 1000.0
 
-        print(f"  ✅ ÉXITO - Respuesta: '{res.content.strip()}'")
+        raw_output = str(res.content).strip()
+        print(f"  ✅ ÉXITO - Respuesta bruta del modelo:\n{raw_output}")
         print(f"  ⏱️ Latencia: {latency_ms:.1f} ms")
 
+        # 2. Probar extracción de comando y razonamiento
+        print("\n[2/3] Probando sanitizador de comandos y razonamiento <think>...")
+        matched_cmd = BaseAgent.clean_and_match_command(raw_output, ["look", "inventory"])
+        reasoning = BaseAgent.extract_reasoning(raw_output)
+        print(f"  🎯 Comando extraído con éxito: '{matched_cmd}'")
+        if reasoning:
+            res_preview = reasoning[:120] + "..." if len(reasoning) > 120 else reasoning
+            print(f"  💭 Razonamiento detectado: '{res_preview}'")
+
     except Exception as exc:
-        print(f"  ❌ FALLO DE CONEXIÓN: {exc}")
-        print("  💡 Asegúrate de que vLLM o Ollama esté corriendo en el puerto 8000 con soporte para ambas RTX 4090.")
+        print(f"  ❌ FALLO DE CONEXIÓN LLM: {exc}")
+        print("  💡 Asegúrate de que Ollama o vLLM esté corriendo con soporte para ambas RTX 4090.")
         print("  ℹ️ Consulta el archivo documents/CONFIGURACION_HARDWARE_2X_RTX4090.md para instrucciones.")
         return 1
 
-    # 2. Probar Embeddings
-    print("\n[2/2] Probando generación de embeddings...")
+    # 3. Probar Embeddings
+    print("\n[3/3] Probando generación de embeddings...")
     try:
         from langchain_openai import OpenAIEmbeddings
 
@@ -60,7 +75,8 @@ def test_connection() -> int:
             base_url=config.embedding_base_url,
             api_key=config.embedding_api_key,
             model=config.embedding_model,
-            timeout=10.0,
+            timeout=15.0,
+            check_embedding_ctx_length=False,
         )
 
         t0 = time.time()

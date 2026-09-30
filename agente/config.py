@@ -4,40 +4,45 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
+from dotenv import load_dotenv
+
+# Cargar automáticamente variables de entorno desde .env si existe
+load_dotenv()
+
 
 @dataclass
 class AgentConfig:
     """Configuración global para agentes LLM y memoria, adaptado para servidor local 2x RTX 4090."""
 
-    # Conexión LLM (vLLM / Ollama con OpenAI Compatible API)
+    # Conexión LLM (Ollama / vLLM con OpenAI Compatible API en 2x RTX 4090)
     llm_base_url: str = field(
-        default_factory=lambda: os.getenv("LLM_BASE_URL", "http://localhost:8000/v1")
+        default_factory=lambda: os.getenv("LLM_BASE_URL", "http://localhost:11434/v1")
     )
     llm_api_key: str = field(
         default_factory=lambda: os.getenv("LLM_API_KEY", "EMPTY")
     )
     llm_model: str = field(
-        default_factory=lambda: os.getenv("LLM_MODEL", "meta-llama/Llama-3.1-8B-Instruct")
+        default_factory=lambda: os.getenv("LLM_MODEL", "qwen3:32b")
     )
     temperature: float = field(
         default_factory=lambda: float(os.getenv("LLM_TEMPERATURE", "0.1"))
     )
     max_tokens: int = field(
-        default_factory=lambda: int(os.getenv("LLM_MAX_TOKENS", "128"))
+        default_factory=lambda: int(os.getenv("LLM_MAX_TOKENS", "512"))
     )
     request_timeout: float = field(
-        default_factory=lambda: float(os.getenv("LLM_REQUEST_TIMEOUT", "30.0"))
+        default_factory=lambda: float(os.getenv("LLM_REQUEST_TIMEOUT", "60.0"))
     )
 
     # Conexión Embeddings para RAG
     embedding_base_url: str = field(
-        default_factory=lambda: os.getenv("EMBEDDING_BASE_URL", "http://localhost:8000/v1")
+        default_factory=lambda: os.getenv("EMBEDDING_BASE_URL", "http://localhost:11434/v1")
     )
     embedding_api_key: str = field(
         default_factory=lambda: os.getenv("EMBEDDING_API_KEY", "EMPTY")
     )
     embedding_model: str = field(
-        default_factory=lambda: os.getenv("EMBEDDING_MODEL", "BAAI/bge-large-en-v1.5")
+        default_factory=lambda: os.getenv("EMBEDDING_MODEL", "bge-m3:latest")
     )
 
     # Memoria Clásica (Historial)
@@ -49,7 +54,9 @@ class AgentConfig:
 
     # Tolerancia a fallos y modo offline
     # Si True y el servidor en las 2x RTX 4090 no responde, se usa fallback sin romper la app/test
-    fallback_if_offline: bool = True
+    fallback_if_offline: bool = field(
+        default_factory=lambda: os.getenv("FALLBACK_IF_OFFLINE", "false").lower() in ("true", "1", "yes")
+    )
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> AgentConfig:

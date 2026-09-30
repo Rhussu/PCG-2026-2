@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import random
+import re
+import time
 from typing import Callable
 
 from PySide6.QtCore import QThread, Qt, Signal
@@ -29,6 +31,7 @@ from PySide6.QtWidgets import (
 from textworld import EnvInfos
 import textworld.generator as tw_gen
 
+from agente.config import AgentConfig
 from agente.factory import get_available_agents
 
 
@@ -115,6 +118,46 @@ class GameGeneratorWorker(QThread):
             self.finished_error.emit(str(exc))
 
 
+class LLMQuickTestWorker(QThread):
+    """Hilo secundario para comprobar la conectividad en vivo con el servidor 2x RTX 4090."""
+    finished_result = Signal(bool, str, float)  # success, message, latency_ms
+
+    def __init__(self, base_url: str, model: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.base_url = base_url
+        self.model = model
+
+    def run(self) -> None:
+        t0 = time.time()
+        try:
+            from langchain_core.messages import HumanMessage
+            from langchain_openai import ChatOpenAI
+
+            llm = ChatOpenAI(
+                base_url=self.base_url,
+                api_key="EMPTY",
+                model=self.model,
+                temperature=0.0,
+                max_tokens=60,
+                timeout=12.0,
+                max_retries=1,
+            )
+            res = llm.invoke([HumanMessage(content="Responde solo: OK")])
+            latency = (time.time() - t0) * 1000.0
+            content = str(res.content).strip()
+            cleaned = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+            resp_word = cleaned if cleaned else content
+            if len(resp_word) > 25:
+                resp_word = resp_word[:25] + "..."
+            self.finished_result.emit(True, f"Conectado: {self.model} ({resp_word})", latency)
+        except Exception as exc:
+            latency = (time.time() - t0) * 1000.0
+            err_msg = str(exc)
+            if len(err_msg) > 75:
+                err_msg = err_msg[:75] + "..."
+            self.finished_result.emit(False, f"Error: {err_msg}", latency)
+
+
 class ConfigPanel(QWidget):
     def __init__(
         self,
@@ -129,6 +172,8 @@ class ConfigPanel(QWidget):
         self.on_return_menu = on_return_menu
         self.setObjectName("RightPanel")
         self.worker: GameGeneratorWorker | None = None
+        self.base_agent_config = AgentConfig()
+        self.llm_test_worker: LLMQuickTestWorker | None = None
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(1, 0, 0, 0)
@@ -854,7 +899,7 @@ class ConfigPanel(QWidget):
         header = QLabel("MODELO DECISOR & ARQUITECTURA DE MEMORIA", container)
         header.setObjectName("ConfigSectionHeader")
 
-        badge = QLabel("SOPORTE 2x RTX 4090", container)
+        badge = QLabel("⚡ 2x NVIDIA RTX 4090 (48 GB VRAM)", container)
         badge.setStyleSheet(
             "background-color: rgba(198, 120, 221, 0.15); color: #c678dd; "
             "border: 1px solid #c678dd; border-radius: 4px; padding: 2px 8px; font-size: 10px; font-weight: 700;"
@@ -865,7 +910,34 @@ class ConfigPanel(QWidget):
         header_layout.addWidget(badge)
         layout.addLayout(header_layout)
 
-        # Selector de agente
+        # Cluster Hardware Info Card
+        cluster_card = QFrame(container)
+        cluster_card.setStyleSheet(
+            "background-color: #21252b; border: 1px solid #3e4451; border-radius: 8px; padding: 8px 12px;"
+        )
+        c_layout = QHBoxLayout(cluster_card)
+        c_layout.setContentsMargins(4, 4, 4, 4)
+
+        icon_lbl = QLabel("🖥️", cluster_card)
+        icon_lbl.setStyleSheet("font-size: 20px;")
+
+        txt_layout = QVBoxLayout()
+        txt_layout.setSpacing(2)
+        c_title = QLabel("Cluster Local Activo: 2x NVIDIA GeForce RTX 4090 (Driver 580.173 / CUDA 13.0)", cluster_card)
+        c_title.setStyleSheet("color: #98c379; font-size: 11px; font-weight: 700;")
+        c_desc = QLabel(
+            "Capas y contexto distribuidos en paralelo (GPU 0: 15.5 GB | GPU 1: 15.1 GB) • Ventana de 40K tokens",
+            cluster_card,
+        )
+        c_desc.setStyleSheet("color: #abb2bf; font-size: 10px;")
+        txt_layout.addWidget(c_title)
+        txt_layout.addWidget(c_desc)
+
+        c_layout.addWidget(icon_lbl)
+        c_layout.addLayout(txt_layout, stretch=1)
+        layout.addWidget(cluster_card)
+
+        # Selector de agente autónomo activo
         selector_layout = QHBoxLayout()
         selector_lbl = QLabel("Agente Autónomo Activo:", container)
         selector_lbl.setStyleSheet("color: #abb2bf; font-size: 12px; font-weight: 600;")
@@ -894,7 +966,10 @@ class ConfigPanel(QWidget):
         h_layout = QVBoxLayout(self.history_setting_widget)
         h_layout.setContentsMargins(0, 0, 0, 0)
         self.agent_history_slider, self.agent_history_val_lbl = self._create_slider_control(
-            "Ventana de Contexto (Turnos previos):", min_val=2, max_val=30, default_val=10
+            "Ventana de Contexto (Turnos previos):",
+            min_val=2,
+            max_val=40,
+            default_val=self.base_agent_config.classic_history_window,
         )
         h_layout.addLayout(self._wrap_labeled_control(
             "Ventana Deslizante de Memoria Conversacional (LangChain Buffer)",
@@ -907,54 +982,152 @@ class ConfigPanel(QWidget):
         self.rag_setting_widget = QWidget(container)
         r_layout = QVBoxLayout(self.rag_setting_widget)
         r_layout.setContentsMargins(0, 0, 0, 0)
+        r_layout.setSpacing(8)
+
         self.agent_rag_k_slider, self.agent_rag_k_val_lbl = self._create_slider_control(
-            "Memorias Relevantes a Recuperar (Top-K):", min_val=1, max_val=10, default_val=4
+            "Memorias Relevantes a Recuperar (Top-K):",
+            min_val=1,
+            max_val=12,
+            default_val=self.base_agent_config.rag_top_k,
         )
         r_layout.addLayout(self._wrap_labeled_control(
             "Recuperación Vectorial Semántica de Experiencias (LangChain Top-K)",
             self.agent_rag_k_slider,
             self.agent_rag_k_val_lbl,
         ))
+
+        # Selector de modelo de Embeddings para RAG
+        rag_emb_row = QHBoxLayout()
+        emb_lbl = QLabel("Modelo de Embeddings (Vectores RAG):", self.rag_setting_widget)
+        emb_lbl.setStyleSheet("color: #abb2bf; font-size: 11px; font-weight: 600;")
+        self.agent_emb_combo = QComboBox(self.rag_setting_widget)
+        self.agent_emb_combo.setObjectName("ConfigComboBox")
+        self.agent_emb_combo.addItem("🧠 BGE-M3 (1024 dims - Local 2x RTX 4090)", "bge-m3:latest")
+        self.agent_emb_combo.addItem("📝 Nomic Embed Text (274 MB - Local)", "nomic-embed-text:latest")
+        self.agent_emb_combo.addItem("⚙️ Fallback Determinístico Local", "local_fallback")
+        rag_emb_row.addWidget(emb_lbl)
+        rag_emb_row.addWidget(self.agent_emb_combo, stretch=1)
+        r_layout.addLayout(rag_emb_row)
+
         layout.addWidget(self.rag_setting_widget)
 
-        # Contenedor de configuración de hardware local 2x RTX 4090
-        self.hw_setting_widget = QGroupBox("Servidor LLM Local (2x RTX 4090 / vLLM / Ollama API)", container)
-        hw_layout = QGridLayout(self.hw_setting_widget)
+        # Contenedor de configuración de hardware central 2x RTX 4090
+        self.hw_setting_widget = QGroupBox("Motor Central de Inferencia (2x NVIDIA RTX 4090)", container)
+        hw_layout = QVBoxLayout(self.hw_setting_widget)
         hw_layout.setSpacing(10)
 
-        lbl_url = QLabel("Endpoint Local API:")
-        lbl_url.setStyleSheet("color: #abb2bf; font-size: 11px;")
-        self.agent_url_edit = QLineEdit("http://localhost:8000/v1", self.hw_setting_widget)
-        self.agent_url_edit.setObjectName("ConfigFileLineEdit")
-        self.agent_url_edit.setPlaceholderText("http://localhost:8000/v1")
+        # Fila 1: Selector de Backend / Motor
+        backend_row = QHBoxLayout()
+        backend_lbl = QLabel("Motor / Backend:", self.hw_setting_widget)
+        backend_lbl.setStyleSheet("color: #abb2bf; font-size: 11px; font-weight: 600;")
+        backend_lbl.setFixedWidth(135)
+
+        self.backend_combo = QComboBox(self.hw_setting_widget)
+        self.backend_combo.setObjectName("ConfigComboBox")
+        self.backend_combo.addItem("⚡ Ollama Local (Recomendado 2x RTX 4090 - Puerto 11434)", "ollama")
+        self.backend_combo.addItem("🚀 vLLM Servidor Local (Tensor Parallelism tp=2 - Puerto 8000)", "vllm")
+        self.backend_combo.addItem("🌐 Endpoint Personalizado / Remoto", "custom")
+        self.backend_combo.currentIndexChanged.connect(self._on_backend_changed)
+
+        backend_row.addWidget(backend_lbl)
+        backend_row.addWidget(self.backend_combo, stretch=1)
+        hw_layout.addLayout(backend_row)
+
+        # Fila 2: Campo de URL personalizada (oculto por defecto)
+        self.custom_url_widget = QWidget(self.hw_setting_widget)
+        custom_layout = QHBoxLayout(self.custom_url_widget)
+        custom_layout.setContentsMargins(0, 0, 0, 0)
+        custom_lbl = QLabel("URL Base API:", self.custom_url_widget)
+        custom_lbl.setStyleSheet("color: #abb2bf; font-size: 11px;")
+        custom_lbl.setFixedWidth(135)
+        self.custom_url_edit = QLineEdit(self.base_agent_config.llm_base_url, self.custom_url_widget)
+        self.custom_url_edit.setObjectName("ConfigFileLineEdit")
+        self.custom_url_edit.setPlaceholderText("http://localhost:11434/v1")
+        custom_layout.addWidget(custom_lbl)
+        custom_layout.addWidget(self.custom_url_edit, stretch=1)
+        self.custom_url_widget.setVisible(False)
+        hw_layout.addWidget(self.custom_url_widget)
+
+        # Fila 3: Selector de Modelo Central
+        model_row = QHBoxLayout()
+        model_lbl = QLabel("Modelo Central LLM:", self.hw_setting_widget)
+        model_lbl.setStyleSheet("color: #abb2bf; font-size: 11px; font-weight: 600;")
+        model_lbl.setFixedWidth(135)
+
+        self.agent_model_combo = QComboBox(self.hw_setting_widget)
+        self.agent_model_combo.setObjectName("ConfigComboBox")
+        self.agent_model_combo.setEditable(True)
+        self.agent_model_combo.addItem("qwen3:32b", "qwen3:32b")
+        self.agent_model_combo.addItem("qwen2.5-coder:32b", "qwen2.5-coder:32b")
+        self.agent_model_combo.addItem("qwen2.5:72b", "qwen2.5:72b")
+        self.agent_model_combo.addItem("llama3.3:70b", "llama3.3:70b")
+        self.agent_model_combo.addItem("gemma4:latest", "gemma4:latest")
+
+        curr_model = self.base_agent_config.llm_model
+        idx = self.agent_model_combo.findData(curr_model)
+        if idx >= 0:
+            self.agent_model_combo.setCurrentIndex(idx)
+        else:
+            self.agent_model_combo.setEditText(curr_model)
+
+        model_row.addWidget(model_lbl)
+        model_row.addWidget(self.agent_model_combo, stretch=1)
+        self.agent_model_combo.currentIndexChanged.connect(lambda _: self._update_summary())
+        hw_layout.addLayout(model_row)
+
+        # Fila 4: Sliders de Temperatura y Max Tokens
+        params_grid = QGridLayout()
+        params_grid.setSpacing(10)
 
         self.agent_temp_slider, self.agent_temp_val_lbl = self._create_slider_control(
-            "Temperatura:", min_val=0, max_val=100, default_val=10
+            "Temperatura:", min_val=0, max_val=100, default_val=int(self.base_agent_config.temperature * 100)
         )
         self.agent_temp_slider.valueChanged.connect(
             lambda v: self.agent_temp_val_lbl.setText(f"{v / 100.0:.2f}")
         )
-        self.agent_temp_val_lbl.setText("0.10")
-
-        hw_layout.addWidget(lbl_url, 0, 0)
-        hw_layout.addWidget(self.agent_url_edit, 0, 1)
+        self.agent_temp_val_lbl.setText(f"{self.base_agent_config.temperature:.2f}")
 
         temp_row = QHBoxLayout()
-        temp_lbl = QLabel("Temperatura de Inferencia:")
+        temp_lbl = QLabel("Temperatura:", self.hw_setting_widget)
         temp_lbl.setStyleSheet("color: #abb2bf; font-size: 11px;")
+        temp_lbl.setFixedWidth(85)
         temp_row.addWidget(temp_lbl)
         temp_row.addWidget(self.agent_temp_slider, stretch=1)
         temp_row.addWidget(self.agent_temp_val_lbl)
-        hw_layout.addLayout(temp_row, 1, 0, 1, 2)
 
-        lbl_hw_note = QLabel(
-            "💡 Despliegue optimizado para 2x RTX 4090 (48GB VRAM) vía vLLM (tp=2) u Ollama. "
-            "Si el servidor está offline, el sistema opera con fallback automático sin interrupciones.",
-            self.hw_setting_widget,
+        self.agent_tokens_slider, self.agent_tokens_val_lbl = self._create_slider_control(
+            "Tokens Máx:", min_val=64, max_val=1024, default_val=self.base_agent_config.max_tokens
         )
-        lbl_hw_note.setObjectName("ConfigHintLabel")
-        lbl_hw_note.setWordWrap(True)
-        hw_layout.addWidget(lbl_hw_note, 2, 0, 1, 2)
+        tokens_row = QHBoxLayout()
+        tokens_lbl = QLabel("Tokens Máx:", self.hw_setting_widget)
+        tokens_lbl.setStyleSheet("color: #abb2bf; font-size: 11px;")
+        tokens_lbl.setFixedWidth(85)
+        tokens_row.addWidget(tokens_lbl)
+        tokens_row.addWidget(self.agent_tokens_slider, stretch=1)
+        tokens_row.addWidget(self.agent_tokens_val_lbl)
+
+        params_grid.addLayout(temp_row, 0, 0)
+        params_grid.addLayout(tokens_row, 0, 1)
+        hw_layout.addLayout(params_grid)
+
+        # Fila 5: Botón de testeo en vivo del LLM y etiqueta de estado
+        test_bar = QHBoxLayout()
+        self.btn_test_llm = QPushButton("⚡ Probar Conexión con 2x RTX 4090", self.hw_setting_widget)
+        self.btn_test_llm.setCursor(Qt.PointingHandCursor)
+        self.btn_test_llm.setStyleSheet(
+            "QPushButton { background-color: #2c313a; color: #59e8ff; border: 1px solid #61afef; "
+            "border-radius: 5px; padding: 5px 12px; font-size: 11px; font-weight: 600; } "
+            "QPushButton:hover { background-color: #3b4252; color: #ffffff; border-color: #98c379; } "
+            "QPushButton:disabled { background-color: #21252b; color: #5c6370; border-color: #3e4451; }"
+        )
+        self.btn_test_llm.clicked.connect(self._on_test_llm_clicked)
+
+        self.lbl_llm_status = QLabel("Listo para inferencia", self.hw_setting_widget)
+        self.lbl_llm_status.setStyleSheet("color: #98c379; font-size: 11px;")
+
+        test_bar.addWidget(self.btn_test_llm)
+        test_bar.addWidget(self.lbl_llm_status, stretch=1)
+        hw_layout.addLayout(test_bar)
 
         layout.addWidget(self.hw_setting_widget)
 
@@ -962,6 +1135,39 @@ class ConfigPanel(QWidget):
         self._on_agent_changed(0)
 
         return container
+
+    def _on_backend_changed(self, idx: int) -> None:
+        backend = self.backend_combo.currentData() or "ollama"
+        if hasattr(self, "custom_url_widget"):
+            self.custom_url_widget.setVisible(backend == "custom")
+
+    def _on_test_llm_clicked(self) -> None:
+        backend = self.backend_combo.currentData() or "ollama"
+        if backend == "ollama":
+            url = "http://localhost:11434/v1"
+        elif backend == "vllm":
+            url = "http://localhost:8000/v1"
+        else:
+            url = self.custom_url_edit.text().strip() or "http://localhost:11434/v1"
+
+        model = self.agent_model_combo.currentText().split()[0].strip()
+
+        self.lbl_llm_status.setStyleSheet("color: #e5c07b; font-size: 11px;")
+        self.lbl_llm_status.setText(f"⏳ Consultando {model} en 2x RTX 4090...")
+        self.btn_test_llm.setEnabled(False)
+
+        self.llm_test_worker = LLMQuickTestWorker(base_url=url, model=model, parent=self)
+        self.llm_test_worker.finished_result.connect(self._on_llm_test_finished)
+        self.llm_test_worker.start()
+
+    def _on_llm_test_finished(self, success: bool, message: str, latency: float) -> None:
+        self.btn_test_llm.setEnabled(True)
+        if success:
+            self.lbl_llm_status.setStyleSheet("color: #98c379; font-size: 11px; font-weight: 600;")
+            self.lbl_llm_status.setText(f"✅ {message} ({latency:.0f} ms)")
+        else:
+            self.lbl_llm_status.setStyleSheet("color: #e06c75; font-size: 11px;")
+            self.lbl_llm_status.setText(f"❌ {message}")
 
     def _on_agent_changed(self, idx: int) -> None:
         agent_id = self.agent_combo.currentData() or "random"
@@ -985,16 +1191,35 @@ class ConfigPanel(QWidget):
 
     def _get_selected_agent_config(self) -> tuple[str, dict]:
         agent_type = self.agent_combo.currentData() or "random"
-        url = self.agent_url_edit.text().strip() if hasattr(self, "agent_url_edit") else "http://localhost:8000/v1"
-        temp = (self.agent_temp_slider.value() / 100.0) if hasattr(self, "agent_temp_slider") else 0.1
+        backend = self.backend_combo.currentData() if hasattr(self, "backend_combo") else "ollama"
+
+        if backend == "ollama":
+            llm_url = "http://localhost:11434/v1"
+            emb_url = "http://localhost:11434/v1"
+        elif backend == "vllm":
+            llm_url = "http://localhost:8000/v1"
+            emb_url = "http://localhost:8000/v1"
+        else:
+            llm_url = self.custom_url_edit.text().strip() if hasattr(self, "custom_url_edit") else "http://localhost:11434/v1"
+            emb_url = llm_url
+
+        model_name = self.agent_model_combo.currentText().split()[0].strip() if hasattr(self, "agent_model_combo") else "qwen3:32b"
+        emb_model = self.agent_emb_combo.currentData() if hasattr(self, "agent_emb_combo") else "bge-m3:latest"
+        temp = (self.agent_temp_slider.value() / 100.0) if hasattr(self, "agent_temp_slider") else 0.10
+        max_tokens = self.agent_tokens_slider.value() if hasattr(self, "agent_tokens_slider") else 512
         window = self.agent_history_slider.value() if hasattr(self, "agent_history_slider") else 10
         rag_k = self.agent_rag_k_slider.value() if hasattr(self, "agent_rag_k_slider") else 4
 
         agent_config = {
-            "llm_base_url": url or "http://localhost:8000/v1",
+            "llm_base_url": llm_url or "http://localhost:11434/v1",
+            "llm_model": model_name or "qwen3:32b",
+            "embedding_base_url": emb_url or "http://localhost:11434/v1",
+            "embedding_model": emb_model or "bge-m3:latest",
             "temperature": temp,
+            "max_tokens": max_tokens,
             "classic_history_window": window,
             "rag_top_k": rag_k,
+            "fallback_if_offline": True,
         }
         return agent_type, agent_config
 
@@ -1151,7 +1376,13 @@ class ConfigPanel(QWidget):
             self.summary_label.setText(f"Desafío: {ch_name} • Nivel: {lvl} • {pistas}")
 
         if hasattr(self, "agent_combo") and self.agent_combo.currentText():
-            self.summary_label.setText(self.summary_label.text() + f" | {self.agent_combo.currentText()}")
+            agent_txt = self.agent_combo.currentText()
+            agent_id = self.agent_combo.currentData() or "random"
+            if agent_id != "random" and hasattr(self, "agent_model_combo"):
+                model_txt = self.agent_model_combo.currentText().split()[0]
+                self.summary_label.setText(self.summary_label.text() + f" | {agent_txt} ({model_txt} @ 2x 4090)")
+            else:
+                self.summary_label.setText(self.summary_label.text() + f" | {agent_txt}")
 
     def _validate_config_preflight(self, mode_id: int) -> tuple[bool, str]:
         """Comprueba que la configuración sea básica y viable para evitar errores inmediatos."""

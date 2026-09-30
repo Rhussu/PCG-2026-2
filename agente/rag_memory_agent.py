@@ -92,7 +92,10 @@ class RAGMemoryAgent(BaseAgent):
                 model=self.config.embedding_model,
                 timeout=10.0,
                 max_retries=1,
+                check_embedding_ctx_length=False,
             )
+            # Probar generación para validar conectividad con el endpoint
+            self.embeddings.embed_query("probe text")
             self.vector_store = InMemoryVectorStore(self.embeddings)
         except Exception:
             self.embeddings = LocalFallbackEmbeddings()
