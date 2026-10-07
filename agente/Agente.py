@@ -38,3 +38,8 @@ class Agente(RandomAgent):
         if self._delegate is not None:
             return self._delegate.get_metrics()
         return super().get_metrics()
+
+    def get_representation(self) -> dict[str, Any]:
+        if self._delegate is not None:
+            return self._delegate.get_representation()
+        return super().get_representation()

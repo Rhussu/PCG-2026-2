@@ -32,6 +32,11 @@ class BaseAgent(ABC):
         """Retorna las métricas computacionales acumuladas (tokens, latencias, llamadas API)."""
         pass
 
+    @abstractmethod
+    def get_representation(self) -> dict[str, Any]:
+        """Retorna la estructura y estado de la información almacenada en memoria/representación interna del agente."""
+        pass
+
     def get_info(self) -> dict[str, Any]:
         """Retorna metadatos identificativos del agente."""
         return {

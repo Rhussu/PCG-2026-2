@@ -132,6 +132,7 @@ class PrincipalPanel(QWidget):
             agent_type=agent_type,
             agent_config=agent_config,
         )
+        self.left_panel.representation_panel.refresh_representation()
         self.right_stack.setCurrentIndex(1)
 
     def _on_start_test(
@@ -177,6 +178,12 @@ class PrincipalPanel(QWidget):
             self.graph_controller.restore_snapshot(snapshot)
             self.left_panel.map_panel.refresh_map()
 
+        rep_snapshot = iteration_data.get("representation_snapshot")
+        if rep_snapshot:
+            self.left_panel.representation_panel.set_representation(rep_snapshot)
+        elif "agent_type" in iteration_data and iteration_data.get("agent_type") == "random":
+            self.left_panel.representation_panel.set_representation({"type": "none", "agent_type": "random"})
+
     def _on_open_config(self) -> None:
         self.root_stack.setCurrentIndex(1)
         self.right_stack.setCurrentIndex(0)
@@ -184,6 +191,7 @@ class PrincipalPanel(QWidget):
     def _on_open_chat(self) -> None:
         self.root_stack.setCurrentIndex(1)
         self.right_stack.setCurrentIndex(1)
+        self.left_panel.representation_panel.refresh_representation()
 
     def _on_open_test(self) -> None:
         # Cargar sesión activa en la pantalla de testeo

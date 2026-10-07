@@ -44,6 +44,22 @@ class ChatController(QObject):
         self._model_name = self.agente.name
         self.state_changed.emit()
 
+    def get_agent_representation(self) -> dict:
+        """Retorna la representación interna del agente actualmente configurado."""
+        if hasattr(self, "agente") and self.agente is not None:
+            try:
+                return self.agente.get_representation()
+            except Exception:
+                pass
+        return {
+            "type": "none",
+            "agent_type": "none",
+            "name": "Sin Agente",
+            "title": "Sin Memoria",
+            "description": "No hay un agente activo en la sesión.",
+            "data": None,
+        }
+
     @property
     def is_game_active(self) -> bool:
         return self.env is not None

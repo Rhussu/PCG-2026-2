@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QWidget
+"""Módulo de compatibilidad regresiva: GraphPanel ha sido reemplazado por RepresentationPanel.
+Se mantiene este alias para evitar romper importaciones históricas.
+"""
+from interface.panels.representation_panel import RepresentationPanel
 
-
-class GraphPanel(QWidget):
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setObjectName("GraphPanel")
-
-
+# Alias de compatibilidad regresiva
+GraphPanel = RepresentationPanel

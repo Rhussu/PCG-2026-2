@@ -44,3 +44,20 @@ class RandomAgent(BaseAgent):
             "status": "ready",
             "is_mock": False,
         }
+
+    def get_representation(self) -> dict[str, Any]:
+        """El agente aleatorio no almacena información, estado de mundo ni historial."""
+        return {
+            "type": "none",
+            "agent_type": "random",
+            "name": self.name,
+            "title": "Sin Memoria / Representación Trivial",
+            "description": "El Agente Aleatorio opera como control estocástico sin memoria (Markoviano). Elige acciones al azar de forma uniforme sobre los comandos admisibles sin registrar observaciones, acciones ni construir grafos ni espacios vectoriales.",
+            "data": None,
+            "stats": {
+                "stored_items_count": 0,
+                "memory_size_bytes": 0,
+                "turns_remembered": 0,
+                "status": "trivial",
+            },
+        }

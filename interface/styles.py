@@ -66,8 +66,52 @@ QToolTip {
     font-size: 12px;
 }
 
-QWidget#GraphPanel {
+QWidget#GraphPanel, QWidget#RepresentationPanel {
     background-color: #282c34;
+    border-top-left-radius: 14px;
+}
+
+QDialog#RepresentationViewerModal {
+    background-color: #21252b;
+    border: 1px solid #4c5565;
+    border-radius: 12px;
+}
+
+QPushButton#RepresentationModalBtn {
+    background-color: #282c34;
+    color: #abb2bf;
+    border: 1px solid #3e4451;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+QPushButton#RepresentationModalBtn:hover {
+    background-color: #2c313a;
+    color: #ffffff;
+    border-color: #61afef;
+}
+
+QPushButton#RepresentationModalCloseBtn {
+    background-color: #282c34;
+    color: #abb2bf;
+    border: 1px solid #3e4451;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+QPushButton#RepresentationModalCloseBtn:hover {
+    background-color: #e06c75;
+    color: #ffffff;
+    border-color: #e06c75;
+}
+
+QTabWidget#RepresentationTabs::pane {
+    border: 1px solid #3e4451;
+    background-color: #1e2227;
+    border-radius: 8px;
 }
 
 QFrame#PanelsDivider {
@@ -579,6 +623,65 @@ QPushButton#ConfigTestButton:disabled {
     border-color: #282d36;
     background-color: #1a1d22;
     color: #434955;
+}
+
+QPushButton#ConfigExportButton {
+    background-color: #21252b;
+    border: 1.5px solid #98c379;
+    color: #98c379;
+    font-size: 13px;
+    font-weight: 800;
+    border-radius: 8px;
+    padding: 10px 20px;
+    letter-spacing: 1px;
+}
+
+QPushButton#ConfigExportButton:hover {
+    background-color: rgba(152, 195, 121, 0.15);
+    color: #ffffff;
+    border-color: #b5e890;
+}
+
+QPushButton#ConfigExportButton:pressed {
+    background-color: rgba(152, 195, 121, 0.25);
+}
+
+QPushButton#ConfigExportButton:disabled {
+    border-color: #282d36;
+    background-color: #1a1d22;
+    color: #434955;
+}
+
+QPushButton#ConfigExportCardButton {
+    background-color: rgba(152, 195, 121, 0.12);
+    border: 1px solid #98c379;
+    color: #98c379;
+    font-size: 12px;
+    font-weight: 700;
+    border-radius: 6px;
+    padding: 8px 16px;
+}
+
+QPushButton#ConfigExportCardButton:hover {
+    background-color: rgba(152, 195, 121, 0.25);
+    color: #ffffff;
+    border-color: #b5e890;
+}
+
+QPushButton#ConfigImportCardButton {
+    background-color: rgba(97, 175, 239, 0.12);
+    border: 1px solid #61afef;
+    color: #61afef;
+    font-size: 12px;
+    font-weight: 700;
+    border-radius: 6px;
+    padding: 8px 16px;
+}
+
+QPushButton#ConfigImportCardButton:hover {
+    background-color: rgba(97, 175, 239, 0.25);
+    color: #ffffff;
+    border-color: #72bdff;
 }
 
 QFrame#ConfigTestCard {
