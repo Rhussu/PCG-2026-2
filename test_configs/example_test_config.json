@@ -1,0 +1,41 @@
+{
+  "version": "1.0",
+  "mode": "custom",
+  "world_config": {
+    "nb_rooms": 3,
+    "nb_objects": 4,
+    "quest_length": 2,
+    "quest_breadth": 1,
+    "nb_parallel_quests": 1,
+    "subquests": false,
+    "independent_chains": false,
+    "theme": "house",
+    "include_adj": false,
+    "blend_descriptions": false,
+    "blend_instructions": false,
+    "only_last_action": false,
+    "ambiguous_instructions": false,
+    "entity_numbering": false,
+    "seed": 42
+  },
+  "test_config": {
+    "num_iterations": 3,
+    "variation_mode": "same_world",
+    "step_delay_ms": 0,
+    "agent_type": "random",
+    "agent_config": {}
+  },
+  "max_steps": 30,
+  "request_infos": {
+    "admissible_commands": true,
+    "location": true,
+    "facts": true,
+    "description": true,
+    "inventory": true,
+    "score": true,
+    "won": true,
+    "lost": true
+  },
+  "agent_type": "random",
+  "agent_config": {}
+}

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import json
 import os
 import random
 import re
 import time
+from datetime import datetime
 from typing import Callable
 
 from PySide6.QtCore import QThread, Qt, Signal
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -18,6 +21,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QRadioButton,
     QScrollArea,
@@ -31,7 +35,7 @@ from PySide6.QtWidgets import (
 from textworld import EnvInfos
 import textworld.generator as tw_gen
 
-from agente.config import AgentConfig
+from agente.config import AgentConfig, get_installed_ollama_models
 from agente.factory import get_available_agents
 
 
@@ -142,7 +146,7 @@ class LLMQuickTestWorker(QThread):
                 timeout=12.0,
                 max_retries=1,
             )
-            res = llm.invoke([HumanMessage(content="Responde solo: OK")])
+            res = llm.invoke([HumanMessage(content="Respond only: OK")])
             latency = (time.time() - t0) * 1000.0
             content = str(res.content).strip()
             cleaned = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
@@ -1057,23 +1061,25 @@ class ConfigPanel(QWidget):
         self.agent_model_combo = QComboBox(self.hw_setting_widget)
         self.agent_model_combo.setObjectName("ConfigComboBox")
         self.agent_model_combo.setEditable(True)
-        self.agent_model_combo.addItem("qwen3:32b", "qwen3:32b")
-        self.agent_model_combo.addItem("qwen2.5-coder:32b", "qwen2.5-coder:32b")
-        self.agent_model_combo.addItem("qwen2.5:72b", "qwen2.5:72b")
-        self.agent_model_combo.addItem("llama3.3:70b", "llama3.3:70b")
-        self.agent_model_combo.addItem("gemma4:latest", "gemma4:latest")
 
-        curr_model = self.base_agent_config.llm_model
-        idx = self.agent_model_combo.findData(curr_model)
-        if idx >= 0:
-            self.agent_model_combo.setCurrentIndex(idx)
-        else:
-            self.agent_model_combo.setEditText(curr_model)
+        self.btn_refresh_models = QPushButton("🔄", self.hw_setting_widget)
+        self.btn_refresh_models.setToolTip("Escanear y actualizar modelos descargados en Ollama")
+        self.btn_refresh_models.setCursor(Qt.PointingHandCursor)
+        self.btn_refresh_models.setFixedWidth(38)
+        self.btn_refresh_models.setStyleSheet(
+            "QPushButton { background-color: #2c313a; color: #61afef; border: 1px solid #3e4451; "
+            "border-radius: 4px; padding: 4px; font-size: 13px; } "
+            "QPushButton:hover { background-color: #3b4252; color: #98c379; border-color: #98c379; }"
+        )
+        self.btn_refresh_models.clicked.connect(lambda: self._refresh_ollama_models())
 
         model_row.addWidget(model_lbl)
         model_row.addWidget(self.agent_model_combo, stretch=1)
+        model_row.addWidget(self.btn_refresh_models)
         self.agent_model_combo.currentIndexChanged.connect(lambda _: self._update_summary())
         hw_layout.addLayout(model_row)
+
+        self._refresh_ollama_models(preferred_model=self.base_agent_config.llm_model)
 
         # Fila 4: Sliders de Temperatura y Max Tokens
         params_grid = QGridLayout()
@@ -1136,10 +1142,63 @@ class ConfigPanel(QWidget):
 
         return container
 
+    def _refresh_ollama_models(self, preferred_model: str | None = None) -> None:
+        """Carga y actualiza dinámicamente todos los modelos descargados en Ollama."""
+        target_model = preferred_model
+        if not target_model and hasattr(self, "agent_model_combo"):
+            target_model = self.agent_model_combo.currentData() or self.agent_model_combo.currentText().strip()
+        if not target_model:
+            target_model = self.base_agent_config.llm_model
+
+        backend = self.backend_combo.currentData() if hasattr(self, "backend_combo") else "ollama"
+        if backend == "ollama":
+            url = "http://localhost:11434"
+        elif backend == "vllm":
+            url = "http://localhost:8000"
+        else:
+            url = self.custom_url_edit.text().strip() if hasattr(self, "custom_url_edit") else "http://localhost:11434"
+
+        models = get_installed_ollama_models(base_url=url)
+
+        # Si no se obtuvieron modelos (ej. Ollama apagado o endpoint personalizado), usar lista base
+        default_fallback_models = [
+            "qwen3:32b",
+            "qwen2.5-coder:32b",
+            "qwen2.5:72b",
+            "llama3.3:70b",
+            "deepseek-r1:32b",
+            "deepseek-r1:14b",
+            "mistral:7b",
+            "gemma4:latest",
+        ]
+        all_models = models if models else default_fallback_models
+
+        self.agent_model_combo.blockSignals(True)
+        self.agent_model_combo.clear()
+
+        for m in all_models:
+            self.agent_model_combo.addItem(m, m)
+
+        # Seleccionar el modelo deseado si está en la lista, o agregarlo
+        idx = self.agent_model_combo.findData(target_model)
+        if idx >= 0:
+            self.agent_model_combo.setCurrentIndex(idx)
+        else:
+            if target_model:
+                self.agent_model_combo.addItem(target_model, target_model)
+                self.agent_model_combo.setCurrentIndex(self.agent_model_combo.count() - 1)
+            else:
+                self.agent_model_combo.setCurrentIndex(0)
+
+        self.agent_model_combo.blockSignals(False)
+        self._update_summary()
+
     def _on_backend_changed(self, idx: int) -> None:
         backend = self.backend_combo.currentData() or "ollama"
         if hasattr(self, "custom_url_widget"):
             self.custom_url_widget.setVisible(backend == "custom")
+        if backend == "ollama" and hasattr(self, "agent_model_combo"):
+            self._refresh_ollama_models()
 
     def _on_test_llm_clicked(self) -> None:
         backend = self.backend_combo.currentData() or "ollama"
@@ -1150,7 +1209,7 @@ class ConfigPanel(QWidget):
         else:
             url = self.custom_url_edit.text().strip() or "http://localhost:11434/v1"
 
-        model = self.agent_model_combo.currentText().split()[0].strip()
+        model = (self.agent_model_combo.currentData() or self.agent_model_combo.currentText().strip()).split()[0]
 
         self.lbl_llm_status.setStyleSheet("color: #e5c07b; font-size: 11px;")
         self.lbl_llm_status.setText(f"⏳ Consultando {model} en 2x RTX 4090...")
@@ -1203,7 +1262,7 @@ class ConfigPanel(QWidget):
             llm_url = self.custom_url_edit.text().strip() if hasattr(self, "custom_url_edit") else "http://localhost:11434/v1"
             emb_url = llm_url
 
-        model_name = self.agent_model_combo.currentText().split()[0].strip() if hasattr(self, "agent_model_combo") else "qwen3:32b"
+        model_name = (self.agent_model_combo.currentData() or self.agent_model_combo.currentText().strip()).split()[0] if hasattr(self, "agent_model_combo") else "qwen3:32b"
         emb_model = self.agent_emb_combo.currentData() if hasattr(self, "agent_emb_combo") else "bge-m3:latest"
         temp = (self.agent_temp_slider.value() / 100.0) if hasattr(self, "agent_temp_slider") else 0.10
         max_tokens = self.agent_tokens_slider.value() if hasattr(self, "agent_tokens_slider") else 512
@@ -1219,7 +1278,7 @@ class ConfigPanel(QWidget):
             "max_tokens": max_tokens,
             "classic_history_window": window,
             "rag_top_k": rag_k,
-            "fallback_if_offline": True,
+            "fallback_if_offline": False,
         }
         return agent_type, agent_config
 
@@ -1278,6 +1337,26 @@ class ConfigPanel(QWidget):
         )
         layout.addLayout(self._wrap_labeled_control("Velocidad de Simulación (0 ms = Rendimiento Máximo)", self.test_delay_slider, self.test_delay_val_lbl))
 
+        # Acciones de configuración para terminal
+        cli_box = QHBoxLayout()
+        cli_box.setSpacing(10)
+
+        self.btn_export_cli = QPushButton("💾 Guardar Configuración para Terminal (.json)", container)
+        self.btn_export_cli.setObjectName("ConfigExportCardButton")
+        self.btn_export_cli.setToolTip("Exporta la configuración actual a un archivo JSON para ejecutar tests desde la terminal (Headless CLI)")
+        self.btn_export_cli.setCursor(Qt.PointingHandCursor)
+        self.btn_export_cli.clicked.connect(self._on_export_config_clicked)
+        cli_box.addWidget(self.btn_export_cli)
+
+        self.btn_import_cli = QPushButton("📂 Cargar Configuración (.json)", container)
+        self.btn_import_cli.setObjectName("ConfigImportCardButton")
+        self.btn_import_cli.setToolTip("Carga una configuración previamente guardada y actualiza todos los controles")
+        self.btn_import_cli.setCursor(Qt.PointingHandCursor)
+        self.btn_import_cli.clicked.connect(self._on_import_config_clicked)
+        cli_box.addWidget(self.btn_import_cli)
+
+        layout.addLayout(cli_box)
+
         return container
 
     # ------------------ Action Bar ------------------
@@ -1300,6 +1379,14 @@ class ConfigPanel(QWidget):
         info_layout.addWidget(self.summary_label)
         info_layout.addWidget(self.status_label)
 
+        self.export_button = QPushButton("EXPORTAR CONFIG", action_bar)
+        self.export_button.setObjectName("ConfigExportButton")
+        self.export_button.setToolTip("Exporta la configuración actual a un archivo JSON para ejecutar tests desde la terminal")
+        self.export_button.setCursor(Qt.PointingHandCursor)
+        self.export_button.setMinimumHeight(44)
+        self.export_button.setMinimumWidth(160)
+        self.export_button.clicked.connect(self._on_export_config_clicked)
+
         self.test_button = QPushButton("TESTEAR", action_bar)
         self.test_button.setObjectName("ConfigTestButton")
         self.test_button.setCursor(Qt.PointingHandCursor)
@@ -1315,6 +1402,7 @@ class ConfigPanel(QWidget):
         self.start_button.clicked.connect(self._on_start_clicked)
 
         layout.addLayout(info_layout, stretch=1)
+        layout.addWidget(self.export_button)
         layout.addWidget(self.test_button)
         layout.addWidget(self.start_button)
         return action_bar
@@ -1379,7 +1467,7 @@ class ConfigPanel(QWidget):
             agent_txt = self.agent_combo.currentText()
             agent_id = self.agent_combo.currentData() or "random"
             if agent_id != "random" and hasattr(self, "agent_model_combo"):
-                model_txt = self.agent_model_combo.currentText().split()[0]
+                model_txt = (self.agent_model_combo.currentData() or self.agent_model_combo.currentText().strip()).split()[0]
                 self.summary_label.setText(self.summary_label.text() + f" | {agent_txt} ({model_txt} @ 2x 4090)")
             else:
                 self.summary_label.setText(self.summary_label.text() + f" | {agent_txt}")
@@ -1487,26 +1575,25 @@ class ConfigPanel(QWidget):
         self.worker.finished_error.connect(self._on_worker_error)
         self.worker.start()
 
-    def _on_test_clicked(self) -> None:
+    def _get_current_full_config(self) -> tuple[bool, str, dict]:
+        """Extrae y valida la configuración completa para testing y benchmarks."""
         mode_id = self.mode_btn_group.checkedId()
         is_valid, err_msg = self._validate_config_preflight(mode_id)
         if not is_valid:
-            self.status_label.setStyleSheet("color: #e06c75; font-size: 11px;")
-            self.status_label.setText(f"⚠️ {err_msg}")
-            return
+            return False, err_msg, {}
 
         max_steps = self.max_steps_slider.value()
 
-        request_infos = EnvInfos(
-            admissible_commands=True,
-            location=True,
-            facts=True,
-            description=self.chk_description.isChecked(),
-            inventory=self.chk_inventory.isChecked(),
-            score=self.chk_score.isChecked(),
-            won=self.chk_won_lost.isChecked(),
-            lost=self.chk_won_lost.isChecked(),
-        )
+        request_infos_dict = {
+            "admissible_commands": True,
+            "location": True,
+            "facts": True,
+            "description": self.chk_description.isChecked(),
+            "inventory": self.chk_inventory.isChecked(),
+            "score": self.chk_score.isChecked(),
+            "won": self.chk_won_lost.isChecked(),
+            "lost": self.chk_won_lost.isChecked(),
+        }
 
         config: dict = {}
         mode_str = "custom"
@@ -1545,18 +1632,261 @@ class ConfigPanel(QWidget):
                 "only_last_action": self.chk_challenge_only_last.isChecked(),
             }
 
+        agent_type, agent_config = self._get_selected_agent_config()
+
         test_config = {
             "num_iterations": self.test_iterations_slider.value(),
             "variation_mode": "same_world" if (self.radio_var_same.isChecked() or mode_id == 1) else "distinct_seeds",
             "step_delay_ms": self.test_delay_slider.value(),
+            "agent_type": agent_type,
+            "agent_config": agent_config,
         }
 
-        agent_type, agent_config = self._get_selected_agent_config()
-        test_config["agent_type"] = agent_type
-        test_config["agent_config"] = agent_config
+        full_config = {
+            "version": "1.0",
+            "mode": mode_str,
+            "world_config": config,
+            "test_config": test_config,
+            "max_steps": max_steps,
+            "request_infos": request_infos_dict,
+            "agent_type": agent_type,
+            "agent_config": agent_config,
+        }
+        return True, "", full_config
+
+    def _on_test_clicked(self) -> None:
+        """Inicia el benchmark desde la interfaz gráfica."""
+        is_valid, err_msg, full_config = self._get_current_full_config()
+        if not is_valid:
+            self.status_label.setStyleSheet("color: #e06c75; font-size: 11px;")
+            self.status_label.setText(f"⚠️ {err_msg}")
+            return
+
+        mode_str = full_config["mode"]
+        config = full_config["world_config"]
+        test_config = full_config["test_config"]
+        max_steps = full_config["max_steps"]
+        agent_type = full_config["agent_type"]
+        agent_config = full_config["agent_config"]
+        req_dict = full_config["request_infos"]
+
+        request_infos = EnvInfos(
+            admissible_commands=True,
+            location=True,
+            facts=True,
+            description=req_dict.get("description", True),
+            inventory=req_dict.get("inventory", True),
+            score=req_dict.get("score", True),
+            won=req_dict.get("won", True),
+            lost=req_dict.get("lost", True),
+        )
 
         if self.on_start_test:
             self.on_start_test(mode_str, config, test_config, max_steps, request_infos, agent_type, agent_config)
+
+    def _on_export_config_clicked(self) -> None:
+        """Exporta la configuración actual a un archivo JSON para ejecutar tests desde terminal."""
+        is_valid, err_msg, full_config = self._get_current_full_config()
+        if not is_valid:
+            self.status_label.setStyleSheet("color: #e06c75; font-size: 11px;")
+            self.status_label.setText(f"⚠️ {err_msg}")
+            return
+
+        os.makedirs("test_configs", exist_ok=True)
+        ts_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        mode_str = full_config.get("mode", "custom")
+        agent_type = full_config.get("agent_type", "random")
+        default_file = f"config_{mode_str}_{agent_type}_{ts_str}.json"
+        default_path = os.path.join(os.path.abspath("test_configs"), default_file)
+
+        filepath, _ = QFileDialog.getSaveFileName(
+            self,
+            "Guardar Configuración para Terminal (CLI)",
+            default_path,
+            "Archivos JSON (*.json);;Todos los archivos (*.*)",
+        )
+
+        if not filepath:
+            return
+
+        try:
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(full_config, f, ensure_ascii=False, indent=2)
+
+            rel_path = os.path.relpath(filepath, os.getcwd())
+            cmd_suggestion = f"python main.py --config-file {rel_path}"
+
+            # Copiar comando sugerido al portapapeles
+            clipboard = QGuiApplication.clipboard()
+            if clipboard:
+                clipboard.setText(cmd_suggestion)
+
+            self.status_label.setStyleSheet("color: #59ff93; font-size: 11px;")
+            self.status_label.setText(f"✓ Config guardada: {os.path.basename(filepath)} | Comando copiado al portapapeles")
+
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("Configuración Exportada para Terminal")
+            msg_box.setIcon(QMessageBox.Information)
+            msg_box.setText(
+                f"<b>Configuración guardada exitosamente:</b><br>"
+                f"<code>{filepath}</code><br><br>"
+                f"<b>Para ejecutar el test desde la terminal (Headless):</b><br>"
+                f"<code style='color: #59e8ff; font-weight: bold;'>{cmd_suggestion}</code><br><br>"
+                f"<i>(El comando ya fue copiado automáticamente a tu portapapeles)</i>"
+            )
+            msg_box.exec()
+        except Exception as exc:
+            self.status_label.setStyleSheet("color: #e06c75; font-size: 11px;")
+            self.status_label.setText(f"Error al guardar config: {exc}")
+
+    def _on_import_config_clicked(self) -> None:
+        """Carga una configuración JSON previamente guardada y actualiza los controles de la UI."""
+        default_dir = os.path.abspath("test_configs") if os.path.exists("test_configs") else os.getcwd()
+        filepath, _ = QFileDialog.getOpenFileName(
+            self,
+            "Cargar Configuración de Test",
+            default_dir,
+            "Archivos JSON (*.json);;Todos los archivos (*.*)",
+        )
+        if not filepath:
+            return
+
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            self._load_config_into_ui(data)
+            self.status_label.setStyleSheet("color: #59ff93; font-size: 11px;")
+            self.status_label.setText(f"✓ Configuración cargada desde '{os.path.basename(filepath)}'")
+        except Exception as exc:
+            self.status_label.setStyleSheet("color: #e06c75; font-size: 11px;")
+            self.status_label.setText(f"Error al cargar configuración: {exc}")
+
+    def _load_config_into_ui(self, cfg_data: dict) -> None:
+        """Aplica los valores de un diccionario de configuración a los controles de la interfaz."""
+        mode_str = cfg_data.get("mode", "custom")
+        mode_id = 0
+        if mode_str == "file":
+            mode_id = 1
+        elif mode_str == "challenge":
+            mode_id = 2
+
+        btn = self.mode_btn_group.button(mode_id)
+        if btn:
+            btn.setChecked(True)
+            self._on_mode_changed(mode_id)
+
+        w_cfg = cfg_data.get("world_config", {})
+        if mode_id == 0:
+            if "nb_rooms" in w_cfg:
+                self.rooms_slider.setValue(int(w_cfg["nb_rooms"]))
+            if "nb_objects" in w_cfg:
+                self.objects_slider.setValue(int(w_cfg["nb_objects"]))
+            if "quest_length" in w_cfg:
+                self.quest_len_slider.setValue(int(w_cfg["quest_length"]))
+            if "quest_breadth" in w_cfg:
+                self.quest_breadth_slider.setValue(int(w_cfg["quest_breadth"]))
+            if "nb_parallel_quests" in w_cfg:
+                self.parallel_spin.setValue(int(w_cfg["nb_parallel_quests"]))
+            if "subquests" in w_cfg:
+                self.chk_subquests.setChecked(bool(w_cfg["subquests"]))
+            if "independent_chains" in w_cfg:
+                self.chk_independent.setChecked(bool(w_cfg["independent_chains"]))
+            if "theme" in w_cfg:
+                idx = self.theme_combo.findData(w_cfg["theme"])
+                if idx >= 0:
+                    self.theme_combo.setCurrentIndex(idx)
+            if "include_adj" in w_cfg:
+                self.chk_include_adj.setChecked(bool(w_cfg["include_adj"]))
+            if "blend_descriptions" in w_cfg:
+                self.chk_blend_desc.setChecked(bool(w_cfg["blend_descriptions"]))
+            if "blend_instructions" in w_cfg:
+                self.chk_blend_inst.setChecked(bool(w_cfg["blend_instructions"]))
+            if "only_last_action" in w_cfg:
+                self.chk_only_last.setChecked(bool(w_cfg["only_last_action"]))
+            if "entity_numbering" in w_cfg:
+                self.chk_numbering.setChecked(bool(w_cfg["entity_numbering"]))
+            seed_val = w_cfg.get("seed")
+            if seed_val is None:
+                self.chk_random_seed.setChecked(True)
+            else:
+                self.chk_random_seed.setChecked(False)
+                self.seed_spin.setValue(int(seed_val))
+
+        elif mode_id == 1:
+            if "file_path" in w_cfg:
+                self.file_path_edit.setText(str(w_cfg["file_path"]))
+                self._validate_file_path()
+
+        elif mode_id == 2:
+            if "challenge_type" in w_cfg:
+                idx = self.challenge_combo.findData(w_cfg["challenge_type"])
+                if idx >= 0:
+                    self.challenge_combo.setCurrentIndex(idx)
+            if "level" in w_cfg:
+                self.difficulty_slider.setValue(int(w_cfg["level"]))
+            seed_val = w_cfg.get("seed")
+            if seed_val is None:
+                self.chk_challenge_random_seed.setChecked(True)
+            else:
+                self.chk_challenge_random_seed.setChecked(False)
+                self.challenge_seed_spin.setValue(int(seed_val))
+            if "only_last_action" in w_cfg:
+                self.chk_challenge_only_last.setChecked(bool(w_cfg["only_last_action"]))
+
+        if "max_steps" in cfg_data:
+            self.max_steps_slider.setValue(int(cfg_data["max_steps"]))
+
+        req = cfg_data.get("request_infos", {})
+        if "description" in req:
+            self.chk_description.setChecked(bool(req["description"]))
+        if "inventory" in req:
+            self.chk_inventory.setChecked(bool(req["inventory"]))
+        if "score" in req:
+            self.chk_score.setChecked(bool(req["score"]))
+        if "won" in req or "lost" in req:
+            self.chk_won_lost.setChecked(bool(req.get("won", True)))
+
+        agent_type = cfg_data.get("agent_type") or cfg_data.get("test_config", {}).get("agent_type")
+        if agent_type and hasattr(self, "agent_combo"):
+            idx = self.agent_combo.findData(agent_type)
+            if idx >= 0:
+                self.agent_combo.setCurrentIndex(idx)
+
+        a_cfg = cfg_data.get("agent_config") or cfg_data.get("test_config", {}).get("agent_config", {})
+        if a_cfg and hasattr(self, "agent_model_combo"):
+            llm_m = a_cfg.get("llm_model")
+            if llm_m:
+                idx = self.agent_model_combo.findData(llm_m)
+                if idx >= 0:
+                    self.agent_model_combo.setCurrentIndex(idx)
+                else:
+                    self.agent_model_combo.addItem(llm_m, llm_m)
+                    self.agent_model_combo.setCurrentIndex(self.agent_model_combo.count() - 1)
+            if "temperature" in a_cfg and hasattr(self, "agent_temp_slider"):
+                self.agent_temp_slider.setValue(int(float(a_cfg["temperature"]) * 100))
+            if "max_tokens" in a_cfg and hasattr(self, "agent_tokens_slider"):
+                self.agent_tokens_slider.setValue(int(a_cfg["max_tokens"]))
+            if "classic_history_window" in a_cfg and hasattr(self, "agent_history_slider"):
+                self.agent_history_slider.setValue(int(a_cfg["classic_history_window"]))
+            if "rag_top_k" in a_cfg and hasattr(self, "agent_rag_k_slider"):
+                self.agent_rag_k_slider.setValue(int(a_cfg["rag_top_k"]))
+            if "embedding_model" in a_cfg and hasattr(self, "agent_emb_combo"):
+                emb_idx = self.agent_emb_combo.findData(a_cfg["embedding_model"])
+                if emb_idx >= 0:
+                    self.agent_emb_combo.setCurrentIndex(emb_idx)
+
+        t_cfg = cfg_data.get("test_config", {})
+        if "num_iterations" in t_cfg:
+            self.test_iterations_slider.setValue(int(t_cfg["num_iterations"]))
+        if "variation_mode" in t_cfg:
+            if t_cfg["variation_mode"] == "distinct_seeds" and mode_id != 1:
+                self.radio_var_diff.setChecked(True)
+            else:
+                self.radio_var_same.setChecked(True)
+        if "step_delay_ms" in t_cfg:
+            self.test_delay_slider.setValue(int(t_cfg["step_delay_ms"]))
+
+        self._update_summary()
 
     def _on_worker_success(self, game_path: str, max_steps: int, request_infos: EnvInfos) -> None:
         self.status_label.setStyleSheet("color: #59ff93; font-size: 11px;")

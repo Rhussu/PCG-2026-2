@@ -52,11 +52,8 @@ class AgentConfig:
     rag_top_k: int = 4  # Número de memorias contextuales a recuperar por decisión
     rag_score_threshold: float = 0.0
 
-    # Tolerancia a fallos y modo offline
-    # Si True y el servidor en las 2x RTX 4090 no responde, se usa fallback sin romper la app/test
-    fallback_if_offline: bool = field(
-        default_factory=lambda: os.getenv("FALLBACK_IF_OFFLINE", "false").lower() in ("true", "1", "yes")
-    )
+    # Tolerancia a fallos y modo offline (deshabilitado: fallos en el modelo levantan error para detener el test)
+    fallback_if_offline: bool = False
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> AgentConfig:
@@ -78,3 +75,23 @@ class AgentConfig:
             "embedding_model": self.embedding_model,
             "fallback_if_offline": self.fallback_if_offline,
         }
+
+
+def get_installed_ollama_models(base_url: str = "http://localhost:11434", timeout: float = 3.0) -> list[str]:
+    """Consulta la API de Ollama (/api/tags) y retorna la lista ordenada de modelos descargados."""
+    import json
+    import urllib.request
+
+    clean_url = (base_url or "http://localhost:11434").rstrip("/")
+    if clean_url.endswith("/v1"):
+        clean_url = clean_url[:-3]
+    tags_url = f"{clean_url}/api/tags"
+    try:
+        req = urllib.request.Request(tags_url, headers={"User-Agent": "PCG-Agent"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            models = [m["name"] for m in data.get("models", []) if isinstance(m, dict) and "name" in m]
+            return sorted(models)
+    except Exception:
+        return []
+
