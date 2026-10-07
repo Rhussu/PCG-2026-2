@@ -42,8 +42,8 @@ def test_connection() -> int:
 
         t0 = time.time()
         res = llm.invoke([
-            SystemMessage(content="Eres un jugador de TextWorld. Responde eligiendo exactamente un comando de la lista."),
-            HumanMessage(content="Comandos disponibles: look, inventory. Elige uno."),
+            SystemMessage(content="You are a TextWorld player. Respond by choosing exactly one command from the list."),
+            HumanMessage(content="Available commands: look, inventory. Choose one."),
         ])
         latency_ms = (time.time() - t0) * 1000.0
 

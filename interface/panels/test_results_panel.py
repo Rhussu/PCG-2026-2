@@ -284,13 +284,13 @@ class TestResultsPanel(QWidget):
         container.setObjectName("ConfigGymCard")
         layout = QVBoxLayout(container)
         layout.setContentsMargins(18, 16, 18, 16)
-        layout.setSpacing(12)
+        layout.setSpacing(14)
 
         header_layout = QHBoxLayout()
         lbl = QLabel("MÉTRICAS DE RECURSOS DEL AGENTE (TOKENS & INFERENCIA)", container)
         lbl.setObjectName("ConfigSectionHeader")
 
-        self.agent_metric_badge = QLabel("AGENTE DECISOR", container)
+        self.agent_metric_badge = QLabel("PERFIL COMPUTACIONAL DEL MODELO", container)
         self.agent_metric_badge.setStyleSheet(
             "background-color: rgba(97, 175, 239, 0.15); color: #59e8ff; "
             "border: 1px solid #59e8ff; border-radius: 4px; padding: 2px 8px; font-size: 10px; font-weight: 700;"
@@ -301,39 +301,72 @@ class TestResultsPanel(QWidget):
         header_layout.addWidget(self.agent_metric_badge)
         layout.addLayout(header_layout)
 
-        desc = QLabel(
-            "Apartado preparado para registrar el gasto de computación del modelo cuando se integre un LLM: "
-            "tokens consumidos, latencia media por decisión y estimación de costos.",
-            container,
+        # Contenedor dividido: Gráfico de Telaraña (Izquierda) + Tarjetas numéricas (Derecha)
+        body_layout = QHBoxLayout()
+        body_layout.setSpacing(18)
+
+        # 1. Gráfico de Telaraña (Radar Chart)
+        radar_box = QFrame(container)
+        radar_box.setObjectName("TestRadarContainer")
+        radar_layout = QVBoxLayout(radar_box)
+        radar_layout.setContentsMargins(14, 12, 14, 12)
+        radar_layout.setSpacing(6)
+
+        radar_title_row = QHBoxLayout()
+        radar_title = QLabel("🕸 DIAGRAMA DE TELARAÑA", radar_box)
+        radar_title.setStyleSheet("color: #abb2bf; font-size: 11px; font-weight: 700; letter-spacing: 0.8px;")
+        radar_scale_hint = QLabel("Escala 0% - 100% (Exterior = Mejor)", radar_box)
+        radar_scale_hint.setStyleSheet("color: #59e8ff; font-size: 10px; font-weight: 600;")
+        radar_title_row.addWidget(radar_title)
+        radar_title_row.addStretch()
+        radar_title_row.addWidget(radar_scale_hint)
+        radar_layout.addLayout(radar_title_row)
+
+        self.agent_radar_chart = RadarChartWidget(radar_box)
+        self.agent_radar_chart.setMinimumSize(360, 310)
+        radar_layout.addWidget(self.agent_radar_chart)
+
+        radar_footnote = QLabel(
+            "💡 Rendimiento computacional: Menor latencia y menor uso de tokens otorgan mayor puntaje hacia el exterior.",
+            radar_box,
         )
-        desc.setObjectName("ConfigHintLabel")
-        layout.addWidget(desc)
+        radar_footnote.setObjectName("ConfigHintLabel")
+        radar_footnote.setAlignment(Qt.AlignCenter)
+        radar_layout.addWidget(radar_footnote)
+
+        body_layout.addWidget(radar_box, stretch=5)
+
+        # 2. Grid de 4 tarjetas de métricas del agente
+        cards_widget = QWidget(container)
+        cards_layout = QVBoxLayout(cards_widget)
+        cards_layout.setContentsMargins(0, 0, 0, 0)
+        cards_layout.setSpacing(10)
 
         grid = QGridLayout()
-        grid.setSpacing(12)
+        grid.setSpacing(10)
 
         self.card_prompt_tokens = self._create_metric_card(
             "TOKENS DE ENTRADA (PROMPT)",
             "--",
-            "#5c6370",
+            "#59e8ff",
             "Tokens enviados en observaciones y contexto",
         )
         self.card_completion_tokens = self._create_metric_card(
             "TOKENS DE SALIDA (COMPLETION)",
             "--",
-            "#5c6370",
+            "#98c379",
             "Tokens generados en respuestas del agente",
         )
         self.card_latency = self._create_metric_card(
             "LATENCIA MEDIA POR ACCIÓN",
             "-- ms",
-            "#5c6370",
+            "#e5c07b",
             "Tiempo de respuesta del agente por paso",
         )
         self.card_cost = self._create_metric_card(
             "LLAMADAS API / COSTO ESTIMADO",
             "-- / $0.00",
-            "#5c6370",
+            "#c678dd",
             "Llamadas totales y costo estimado de inferencia",
         )
 
@@ -342,7 +375,10 @@ class TestResultsPanel(QWidget):
         grid.addWidget(self.card_latency, 1, 0)
         grid.addWidget(self.card_cost, 1, 1)
 
-        layout.addLayout(grid)
+        cards_layout.addLayout(grid)
+        body_layout.addWidget(cards_widget, stretch=6)
+
+        layout.addLayout(body_layout)
         return container
 
     def _build_iterations_table_section(self) -> QWidget:
@@ -681,6 +717,117 @@ class TestResultsPanel(QWidget):
             self.card_cost.s_lbl.setText("Inferencia local sin costo")  # type: ignore[attr-defined]
         else:
             self.card_cost.v_lbl.setText("-- / $0.00")  # type: ignore[attr-defined]
+
+        # ----------------- Gráfico de Telaraña del Agente (Perfil Computacional) -----------------
+        is_baseline = (agent_name == "Agente Aleatorio (Baseline)")
+        calls_count = api_calls if (api_calls is not None and api_calls > 0) else max(1, int(round(avg_steps * (total_runs or len(its) or 1))))
+        lat_val = float(latency) if (latency is not None and latency > 0) else 0.0
+        p_tok_val = int(p_tokens) if (p_tokens is not None and p_tokens > 0) else 0
+        c_tok_val = int(c_tokens) if (c_tokens is not None and c_tokens > 0) else 0
+
+        # 1. Velocidad (Inferencia)
+        if is_baseline:
+            score_speed = 100.0
+            disp_speed = "100.0% (0.0 ms)"
+        elif lat_val > 0:
+            score_speed = round(max(5.0, min(100.0, 100.0 * (1.0 - (min(lat_val, 5000.0) / 5000.0)))), 1)
+            disp_speed = f"{score_speed:.1f}% ({lat_val:.0f} ms)"
+        else:
+            score_speed = 100.0 if is_baseline else 50.0
+            disp_speed = "100.0% (0.0 ms)" if is_baseline else "--"
+
+        # 2. Economía Prompt
+        if is_baseline:
+            score_prompt = 100.0
+            disp_prompt = "100.0% (0 t)"
+        elif p_tok_val > 0:
+            avg_p_tok = p_tok_val / max(1, calls_count)
+            score_prompt = round(max(5.0, min(100.0, 100.0 * (1.0 - (min(avg_p_tok, 3000.0) / 3000.0)))), 1)
+            disp_prompt = f"{score_prompt:.1f}% ({avg_p_tok:.0f} t/paso)"
+        else:
+            score_prompt = 50.0
+            disp_prompt = "--"
+
+        # 3. Concisición (Tokens de salida por paso)
+        if is_baseline:
+            score_concise = 100.0
+            disp_concise = "100.0% (1 t)"
+        elif c_tok_val > 0:
+            avg_c_tok = c_tok_val / max(1, calls_count)
+            score_concise = round(max(5.0, min(100.0, 100.0 * (1.0 - (min(avg_c_tok, 100.0) / 100.0)))), 1)
+            disp_concise = f"{score_concise:.1f}% ({avg_c_tok:.1f} t/paso)"
+        else:
+            score_concise = 50.0
+            disp_concise = "--"
+
+        # 4. Productividad (Retorno del cómputo en progreso del juego)
+        score_productivity = round(max(0.0, min(100.0, (score_efficacy * 0.7 + score_points * 0.3))), 1)
+        disp_productivity = f"{score_productivity:.1f}%"
+
+        # 5. Consistencia (Fiabilidad sin timeouts)
+        total_eval = total_runs or len(its) or 1
+        timeout_ratio = timeouts / float(total_eval)
+        score_consistency = round(max(0.0, min(100.0, 100.0 * (1.0 - timeout_ratio))), 1)
+        disp_consistency = f"{score_consistency:.1f}% ({total_runs - timeouts}/{total_runs})"
+
+        agent_radar_axes = [
+            {
+                "label": "Velocidad",
+                "name": "Velocidad",
+                "score": score_speed,
+                "value": score_speed,
+                "display_text": disp_speed,
+                "display": disp_speed,
+                "color": "#59e8ff",
+                "description": "Latencia de inferencia por paso",
+            },
+            {
+                "label": "Economía Prompt",
+                "name": "Economía Prompt",
+                "score": score_prompt,
+                "value": score_prompt,
+                "display_text": disp_prompt,
+                "display": disp_prompt,
+                "color": "#98c379",
+                "description": "Consumo de tokens de contexto",
+            },
+            {
+                "label": "Concisición",
+                "name": "Concisición",
+                "score": score_concise,
+                "value": score_concise,
+                "display_text": disp_concise,
+                "display": disp_concise,
+                "color": "#e5c07b",
+                "description": "Tokens de salida por acción",
+            },
+            {
+                "label": "Productividad",
+                "name": "Productividad",
+                "score": score_productivity,
+                "value": score_productivity,
+                "display_text": disp_productivity,
+                "display": disp_productivity,
+                "color": "#c678dd",
+                "description": "Eficacia de decisiones por llamada",
+            },
+            {
+                "label": "Consistencia",
+                "name": "Consistencia",
+                "score": score_consistency,
+                "value": score_consistency,
+                "display_text": disp_consistency,
+                "display": disp_consistency,
+                "color": "#61afef",
+                "description": "Partidas completadas sin timeout",
+            },
+        ]
+        if hasattr(self, "agent_radar_chart"):
+            self.agent_radar_chart.set_data(agent_radar_axes)
+
+        overall_agent_perf = (score_speed + score_prompt + score_concise + score_productivity + score_consistency) / 5.0
+        if hasattr(self, "agent_metric_badge"):
+            self.agent_metric_badge.setText(f"🤖 {agent_name.upper()} • EFICIENCIA: {overall_agent_perf:.1f}%")
 
         saved_path = session_data.get("saved_filepath", "")
         self.footer_info.setText(f"Sesión guardada en: {saved_path}")

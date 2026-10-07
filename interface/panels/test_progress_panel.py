@@ -558,6 +558,7 @@ class TestProgressPanel(QWidget):
         self.load_session_data(session_data, select_iteration_idx=0)
 
     def _on_test_error(self, err_msg: str) -> None:
+        self.current_worker = None
         self.header_status_label.setText(f"Error en el test: {err_msg}")
         self.footer_status.setText(f"Error crítico: {err_msg}")
         self.cancel_button.setEnabled(False)
