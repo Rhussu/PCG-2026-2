@@ -15,161 +15,75 @@ food is edible.
 A room has a text called internal name.
 
 
-The r_0 and the r_1 and the r_3 and the r_2 and the r_4 and the r_5 are rooms.
+The r_1 and the r_0 and the r_2 are rooms.
 
-Understand "serious study" as r_0.
-The internal name of r_0 is "serious study".
-The printed name of r_0 is "-= Serious Study =-".
-The serious study part 0 is some text that varies. The serious study part 0 is "You find yourself in a study. A serious one. You try to gain information on your surroundings by using a technique you call 'looking.'
+Understand "shower" as r_1.
+The internal name of r_1 is "shower".
+The printed name of r_1 is "-= Shower =-".
+The shower part 0 is some text that varies. The shower part 0 is "You're now in the shower.
 
- [if c_0 is locked]A locked[else if c_0 is open]An open[otherwise]A closed[end if]".
-The serious study part 1 is some text that varies. The serious study part 1 is " locker is nearby.[if c_0 is open and there is something in the c_0] The blue locker contains [a list of things in the c_0].[end if]".
-The serious study part 2 is some text that varies. The serious study part 2 is "[if c_0 is open and the c_0 contains nothing] The locker is empty! This is the worst thing that could possibly happen, ever![end if]".
-The serious study part 3 is some text that varies. The serious study part 3 is " You see [if c_1 is locked]a locked[else if c_1 is open]an opened[otherwise]a closed[end if]".
-The serious study part 4 is some text that varies. The serious study part 4 is " portmanteau.[if c_1 is open and there is something in the c_1] The rusty portmanteau contains [a list of things in the c_1].[end if]".
-The serious study part 5 is some text that varies. The serious study part 5 is "[if c_1 is open and the c_1 contains nothing] The portmanteau is empty, what a horrible day![end if]".
-The serious study part 6 is some text that varies. The serious study part 6 is "
+ You make out [if c_0 is locked]a locked[else if c_0 is open]an opened[otherwise]a closed[end if]".
+The shower part 1 is some text that varies. The shower part 1 is " dresser.[if c_0 is open and there is something in the c_0] The dresser contains [a list of things in the c_0].[end if]".
+The shower part 2 is some text that varies. The shower part 2 is "[if c_0 is open and the c_0 contains nothing] What a letdown! The dresser is empty![end if]".
+The shower part 3 is some text that varies. The shower part 3 is "
 
- There is [if d_0 is open]an open[otherwise]a closed[end if]".
-The serious study part 7 is some text that varies. The serious study part 7 is " stone door leading north. There are unblocked exits to the east and west.".
-The description of r_0 is "[serious study part 0][serious study part 1][serious study part 2][serious study part 3][serious study part 4][serious study part 5][serious study part 6][serious study part 7]".
+There is an exit to the north. Don't worry, it is unblocked. There is an unblocked exit to the west.".
+The description of r_1 is "[shower part 0][shower part 1][shower part 2][shower part 3]".
 
-The r_1 is mapped west of r_0.
-north of r_0 and south of r_3 is a door called d_0.
-The r_5 is mapped east of r_0.
-Understand "messy cellar" as r_1.
-The internal name of r_1 is "messy cellar".
-The printed name of r_1 is "-= Messy Cellar =-".
-The messy cellar part 0 is some text that varies. The messy cellar part 0 is "You arrive in a cellar. A messy one.
-
-
-
-There are unguarded exits to the east and north.".
-The description of r_1 is "[messy cellar part 0]".
-
+The r_0 is mapped west of r_1.
 The r_2 is mapped north of r_1.
-The r_0 is mapped east of r_1.
-Understand "cramped vault" as r_3.
-The internal name of r_3 is "cramped vault".
-The printed name of r_3 is "-= Cramped Vault =-".
-The cramped vault part 0 is some text that varies. The cramped vault part 0 is "You arrive in a vault. A cramped one. You start to take note of what's in the room.
+Understand "bar" as r_0.
+The internal name of r_0 is "bar".
+The printed name of r_0 is "-= Bar =-".
+The bar part 0 is some text that varies. The bar part 0 is "You arrive in a bar. A standard kind of place.
 
 
 
- There is [if d_0 is open]an open[otherwise]a closed[end if]".
-The cramped vault part 1 is some text that varies. The cramped vault part 1 is " stone door leading south. There are unblocked exits to the east and west.".
-The description of r_3 is "[cramped vault part 0][cramped vault part 1]".
+You need an unblocked exit? You should try going east.".
+The description of r_0 is "[bar part 0]".
 
-The r_2 is mapped west of r_3.
-south of r_3 and north of r_0 is a door called d_0.
-The r_4 is mapped east of r_3.
-Understand "serious office" as r_2.
-The internal name of r_2 is "serious office".
-The printed name of r_2 is "-= Serious Office =-".
-The serious office part 0 is some text that varies. The serious office part 0 is "You find yourself in an office. A serious kind of place.
+The r_1 is mapped east of r_0.
+Understand "studio" as r_2.
+The internal name of r_2 is "studio".
+The printed name of r_2 is "-= Studio =-".
+The studio part 0 is some text that varies. The studio part 0 is "You find yourself in a studio. An ordinary kind of place. You decide to just list off a complete list of everything you see in the room, because hey, why not?
 
 
 
-There are unblocked exits to the east and south.".
-The description of r_2 is "[serious office part 0]".
+You need an unblocked exit? You should try going south.".
+The description of r_2 is "[studio part 0]".
 
 The r_1 is mapped south of r_2.
-The r_3 is mapped east of r_2.
-Understand "unreasonably hot kitchen" as r_4.
-The internal name of r_4 is "unreasonably hot kitchen".
-The printed name of r_4 is "-= Unreasonably Hot Kitchen =-".
-The unreasonably hot kitchen part 0 is some text that varies. The unreasonably hot kitchen part 0 is "Look around you. Take it all in. It's not every day someone gets to be in an unreasonably hot kitchen.
+
+The c_0 are containers.
+The c_0 are privately-named.
+The o_0 are object-likes.
+The o_0 are privately-named.
+The r_1 and the r_0 and the r_2 are rooms.
+The r_1 and the r_0 and the r_2 are privately-named.
+
+The description of c_0 is "The dresser looks strong, and impossible to destroy. [if open]You can see inside it.[else if closed]You can't see inside it because the lid's in your way.[otherwise]There is a lock on it.[end if]".
+The printed name of c_0 is "dresser".
+Understand "dresser" as c_0.
+The c_0 is in r_1.
+The c_0 is open.
+The description of o_0 is "The plant appears to be well matched to everything else here".
+The printed name of o_0 is "plant".
+Understand "plant" as o_0.
+The player carries the o_0.
 
 
-
-You don't like doors? Why not try going west, that entranceway is unblocked.".
-The description of r_4 is "[unreasonably hot kitchen part 0]".
-
-The r_3 is mapped west of r_4.
-Understand "marbled shower" as r_5.
-The internal name of r_5 is "marbled shower".
-The printed name of r_5 is "-= Marbled Shower =-".
-The marbled shower part 0 is some text that varies. The marbled shower part 0 is "You've just shown up in a marbled shower.
-
-
-
-You don't like doors? Why not try going west, that entranceway is unblocked.".
-The description of r_5 is "[marbled shower part 0]".
-
-The r_0 is mapped west of r_5.
-
-The c_0 and the c_1 are containers.
-The c_0 and the c_1 are privately-named.
-The d_0 are doors.
-The d_0 are privately-named.
-The f_0 are foods.
-The f_0 are privately-named.
-The k_0 are keys.
-The k_0 are privately-named.
-The o_0 and the o_1 are object-likes.
-The o_0 and the o_1 are privately-named.
-The r_0 and the r_1 and the r_3 and the r_2 and the r_4 and the r_5 are rooms.
-The r_0 and the r_1 and the r_3 and the r_2 and the r_4 and the r_5 are privately-named.
-
-The description of d_0 is "it's a noble door [if open]It is open.[else if closed]It is closed.[otherwise]It is locked.[end if]".
-The printed name of d_0 is "stone door".
-Understand "stone door" as d_0.
-Understand "stone" as d_0.
-Understand "door" as d_0.
-The d_0 is closed.
-The description of c_0 is "The blue locker looks strong, and impossible to destroy. [if open]It is open.[else if closed]It is closed.[otherwise]It is locked.[end if]".
-The printed name of c_0 is "blue locker".
-Understand "blue locker" as c_0.
-Understand "blue" as c_0.
-Understand "locker" as c_0.
-The c_0 is in r_0.
-The c_0 is locked.
-The description of c_1 is "The rusty portmanteau looks strong, and impossible to crack. [if open]You can see inside it.[else if closed]You can't see inside it because the lid's in your way.[otherwise]There is a lock on it.[end if]".
-The printed name of c_1 is "rusty portmanteau".
-Understand "rusty portmanteau" as c_1.
-Understand "rusty" as c_1.
-Understand "portmanteau" as c_1.
-The c_1 is in r_0.
-The c_1 is closed.
-The description of f_0 is "You couldn't pay me to eat that pureed thing.".
-The printed name of f_0 is "pureed fondue".
-Understand "pureed fondue" as f_0.
-Understand "pureed" as f_0.
-Understand "fondue" as f_0.
-The f_0 is in r_2.
-The f_0 is edible.
-The description of k_0 is "The blue key is cold to the touch".
-The printed name of k_0 is "blue key".
-Understand "blue key" as k_0.
-Understand "blue" as k_0.
-Understand "key" as k_0.
-The k_0 is in the c_1.
-The matching key of the c_0 is the k_0.
-The description of o_0 is "The useless keyboard appears well matched to everything else here".
-The printed name of o_0 is "useless keyboard".
-Understand "useless keyboard" as o_0.
-Understand "useless" as o_0.
-Understand "keyboard" as o_0.
-The o_0 is in the c_0.
-The description of o_1 is "The gaudy spork would seem to be to fit in here".
-The printed name of o_1 is "gaudy spork".
-Understand "gaudy spork" as o_1.
-Understand "gaudy" as o_1.
-Understand "spork" as o_1.
-The player carries the o_1.
-
-
-The player is in r_5.
+The player is in r_1.
 
 The quest0 completed is a truth state that varies.
 The quest0 completed is usually false.
 
-Test quest0_0 with "go west / open rusty portmanteau / take blue key from rusty portmanteau / unlock blue locker with blue key / open blue locker / take useless keyboard from blue locker"
+Test quest0_0 with "insert plant into dresser"
 
 Every turn:
 	if quest0 completed is true:
 		do nothing;
-	else if The player is in r_0 and The c_0 is in r_0 and The c_0 is open and The player carries the o_0:
+	else if The player is in r_1 and The c_0 is in r_1 and The c_0 is open and The o_0 is in the c_0:
 		increase the score by 1; [Quest completed]
 		if 1 is 1 [always true]:
 			Now the quest0 completed is true;
@@ -352,7 +266,7 @@ The last property-aggregation rule (this is the print aggregated properties rule
 		rule succeeds;
 	rule fails;
 
-The objective part 0 is some text that varies. The objective part 0 is "I hope you're ready to go into rooms and interact with objects, because you've just entered TextWorld! Your task for today is to take the useless keyboard from the blue locker in the serious study.".
+The objective part 0 is some text that varies. The objective part 0 is "Welcome to TextWorld! Your task for today is to you can deposit the plant inside the dresser.".
 
 An objective is some text that varies. The objective is "[objective part 0]".
 Printing the objective is an action applying to nothing.
